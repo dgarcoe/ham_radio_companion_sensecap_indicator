@@ -80,7 +80,7 @@ static esp_err_t screen_clear(uint16_t color)
 
 IRAM_ATTR static bool on_vsync_event(
     esp_lcd_panel_handle_t panel,
-    esp_lcd_rgb_panel_event_data_t *edata,
+    const esp_lcd_rgb_panel_event_data_t *edata,
     void *user_ctx
 )
 {
