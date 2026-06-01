@@ -11,6 +11,8 @@ static httpd_handle_t s_server = NULL;
 static app_config_t s_cfg;
 static app_portal_saved_cb_t s_saved_cb = NULL;
 
+/* Static HTML; the form is populated via /config (JSON) after load.
+ * Keeping it free of printf-style %s means CSS `width:100%` etc. are safe. */
 static const char INDEX_HTML[] =
 "<!doctype html><html><head><meta charset=utf-8>"
 "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -34,14 +36,18 @@ static const char INDEX_HTML[] =
 "<h1>Ham Radio <span>Companion</span></h1>"
 "<div class=sub>Initial setup &middot; SenseCAP Indicator D1L</div>"
 "<form id=f>"
-"<label>Callsign</label><input name=callsign value='%s' maxlength=15 autocapitalize=characters required>"
-"<label>Grid locator</label><input name=locator value='%s' maxlength=8 autocapitalize=characters>"
-"<label>WiFi SSID</label><input name=ssid value='%s' maxlength=32 required>"
-"<label>WiFi password</label><input name=psk type=password value='' maxlength=64>"
+"<label>Callsign</label><input name=callsign id=callsign maxlength=15 autocapitalize=characters required>"
+"<label>Grid locator</label><input name=locator id=locator maxlength=8 autocapitalize=characters>"
+"<label>WiFi SSID</label><input name=ssid id=ssid maxlength=32 required>"
+"<label>WiFi password</label><input name=psk id=psk type=password maxlength=64>"
 "<button type=submit>Save &amp; connect</button>"
 "<div class=ok id=ok>Saved. Device is reconnecting&hellip;</div>"
 "</form>"
 "<script>"
+"fetch('/config').then(r=>r.json()).then(c=>{"
+"document.getElementById('callsign').value=c.callsign||'';"
+"document.getElementById('locator').value=c.locator||'';"
+"document.getElementById('ssid').value=c.ssid||'';});"
 "document.getElementById('f').addEventListener('submit',async e=>{e.preventDefault();"
 "const fd=new FormData(e.target);const b={};fd.forEach((v,k)=>b[k]=v);"
 "const r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});"
@@ -50,14 +56,20 @@ static const char INDEX_HTML[] =
 
 static esp_err_t index_get(httpd_req_t *req)
 {
-    char *buf = malloc(sizeof(INDEX_HTML) + 256);
-    if (!buf) return ESP_ERR_NO_MEM;
-    int n = snprintf(buf, sizeof(INDEX_HTML) + 256, INDEX_HTML,
-                     s_cfg.callsign, s_cfg.locator, s_cfg.wifi_ssid);
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, buf, n);
-    free(buf);
-    return ESP_OK;
+    return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
+}
+
+/* Returns just the non-secret fields so the form can prefill. PSK is never
+ * sent back to the browser. */
+static esp_err_t config_get(httpd_req_t *req)
+{
+    char body[256];
+    int n = snprintf(body, sizeof(body),
+                     "{\"callsign\":\"%s\",\"locator\":\"%s\",\"ssid\":\"%s\"}",
+                     s_cfg.callsign, s_cfg.locator, s_cfg.wifi_ssid);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, body, n);
 }
 
 /* Minimal JSON string extractor: finds "key":"value" and copies value out.
@@ -125,9 +137,11 @@ esp_err_t app_portal_start(const app_config_t *current, app_portal_saved_cb_t cb
     cfg.lru_purge_enable = true;
     if (httpd_start(&s_server, &cfg) != ESP_OK) return ESP_FAIL;
 
-    httpd_uri_t ix = { .uri = "/",     .method = HTTP_GET,  .handler = index_get };
-    httpd_uri_t sv = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
+    httpd_uri_t ix = { .uri = "/",       .method = HTTP_GET,  .handler = index_get };
+    httpd_uri_t cg = { .uri = "/config", .method = HTTP_GET,  .handler = config_get };
+    httpd_uri_t sv = { .uri = "/save",   .method = HTTP_POST, .handler = save_post };
     httpd_register_uri_handler(s_server, &ix);
+    httpd_register_uri_handler(s_server, &cg);
     httpd_register_uri_handler(s_server, &sv);
     return ESP_OK;
 }

@@ -54,7 +54,7 @@ void ui_init(const app_config_t *cfg)
     s_root = lv_screen_active();
     ui_theme_apply(s_root);
     lv_obj_set_flex_flow(s_root, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_STRETCH, LV_FLEX_ALIGN_START);
+    lv_obj_set_flex_align(s_root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_all(s_root, 0, 0);
 
     build_status_bar(s_root);
