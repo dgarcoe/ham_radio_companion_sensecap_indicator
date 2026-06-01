@@ -8,7 +8,7 @@ An ESP-IDF + LVGL companion for the Seeed Studio **SenseCAP Indicator D1L**
 Bootstrap, plus first feature:
 
 - [x] ESP-IDF project skeleton (ESP32-S3, 16 MB flash, 8 MB PSRAM)
-- [x] LVGL 9 + SenseCAP Indicator BSP wired up
+- [x] LVGL 9 + `esp_lvgl_port` wired up (headless — see "Hardware drivers" below)
 - [x] Dark + neon-accent theme
 - [x] **UTC watch screen** (HH:MM with neon seconds, date, day-of-year)
 - [x] NVS-backed config (callsign, locator, WiFi creds, TZ)
@@ -36,8 +36,27 @@ idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-The first build pulls `lvgl/lvgl` and `seeed-studio/sensecap-indicator-bsp`
-from the ESP component registry.
+The first build pulls `lvgl/lvgl` and `espressif/esp_lvgl_port` from the
+ESP component registry.
+
+## Hardware drivers (next step)
+
+This commit boots LVGL with a **headless display** so the WiFi / portal /
+SNTP / UI logic all run end-to-end — but the panel stays dark until a
+real driver is plugged in. There's a `TODO` block in `main/bsp.c`
+spelling out the two options:
+
+1. **Vendor Seeed's reference drivers.** Clone
+   [`Seeed-Studio/sensecap-indicator-esp32`](https://github.com/Seeed-Studio/sensecap-indicator-esp32)
+   and copy its `indicator_display` / `indicator_touch` components into
+   `./components/`, then call their init from `bsp_display_start()`.
+2. **Use Espressif's registry drivers.** Add
+   `espressif/esp_lcd_st7701` and `espressif/esp_lcd_touch_chsc6x` to
+   `main/idf_component.yml`, build the `esp_lcd_panel_handle_t`, and
+   register it with `lvgl_port_add_disp()` / `lvgl_port_add_touch()`
+   instead of the headless display.
+
+Either way, only `bsp.c` changes — the UI and app code stay put.
 
 ## First boot
 
