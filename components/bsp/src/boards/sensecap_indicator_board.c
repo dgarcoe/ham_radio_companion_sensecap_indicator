@@ -131,7 +131,10 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .VSYNC_BACK_PORCH = 20,
     .VSYNC_FRONT_PORCH = 10,
     .VSYNC_PULSE_WIDTH = 8,
-    .PCLK_ACTIVE_NEG = 0,
+    /* PCLK on the rising edge had us latching data half a clock late and
+     * showing the framebuffer twice. ST7701S samples on the falling edge
+     * by default. */
+    .PCLK_ACTIVE_NEG = 1,
 
     .TOUCH_PANEL_I2C_ADDR = 0,
     .TOUCH_WITH_HOME_BUTTON = 0,
@@ -249,12 +252,7 @@ esp_err_t bsp_board_sensecap_indicator_init(void)
     //ESP_ERROR_CHECK(bsp_i2s_init(I2S_NUM_0, 16000));
     //ESP_ERROR_CHECK(bsp_codec_init(AUDIO_HAL_16K_SAMPLES));
     //bsp_led_set_rgb(0, 0, 0, 255);
-    /* The D1L ships with either ST7701S or GC9503NP, depending on
-     * revision. Sending the wrong init makes the chip light up but with
-     * a wrong RGB-format register, which is what produces shifted
-     * duplicates of the framebuffer. Try GC9503NP first - it's what most
-     * of the recent D1L stock uses. */
-    lcd_panel_gc9503np_init();
+    lcd_panel_st7701s_init();
     //bsp_led_set_rgb(0, 0, 0, 0);
 
     return ESP_OK;
