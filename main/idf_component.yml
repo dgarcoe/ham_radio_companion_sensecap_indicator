@@ -1,7 +1,7 @@
 ## Managed dependencies for the SenseCAP Indicator D1L Ham Radio Companion.
+## The display + touch drivers are not yet wired in (see main/bsp.c).
 dependencies:
   idf:
     version: ">=5.1"
   lvgl/lvgl: "~9.1.0"
   espressif/esp_lvgl_port: "~2.4.0"
-  espressif/sensecap_indicator: "*"
