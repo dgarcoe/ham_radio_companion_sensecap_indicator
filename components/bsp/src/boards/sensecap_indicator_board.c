@@ -249,9 +249,12 @@ esp_err_t bsp_board_sensecap_indicator_init(void)
     //ESP_ERROR_CHECK(bsp_i2s_init(I2S_NUM_0, 16000));
     //ESP_ERROR_CHECK(bsp_codec_init(AUDIO_HAL_16K_SAMPLES));
     //bsp_led_set_rgb(0, 0, 0, 255);
-    /* Always run the ST7701S SPI init (was previously gated on
-     * CONFIG_SENSECAP_INDICATOR_SCREEN_GX which can silently be off). */
-    lcd_panel_st7701s_init();
+    /* The D1L ships with either ST7701S or GC9503NP, depending on
+     * revision. Sending the wrong init makes the chip light up but with
+     * a wrong RGB-format register, which is what produces shifted
+     * duplicates of the framebuffer. Try GC9503NP first - it's what most
+     * of the recent D1L stock uses. */
+    lcd_panel_gc9503np_init();
     //bsp_led_set_rgb(0, 0, 0, 0);
 
     return ESP_OK;
