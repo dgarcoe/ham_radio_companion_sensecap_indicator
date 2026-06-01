@@ -42,7 +42,15 @@ esp_err_t bsp_display_start(void)
     const board_res_desc_t *brd = bsp_board_get_description();
     const int w = brd->LCD_WIDTH;
     const int h = brd->LCD_HEIGHT;
-    ESP_LOGI(TAG, "panel %dx%d", w, h);
+    ESP_LOGI(TAG, "panel %dx%d @ %d MHz, swap_xy=%d mirror=%d/%d bus_width=%d",
+             w, h, (int)(brd->LCD_FREQ / 1000000),
+             brd->LCD_SWAP_XY, brd->LCD_MIRROR_X, brd->LCD_MIRROR_Y,
+             brd->LCD_BUS_WIDTH);
+    ESP_LOGI(TAG, "porches: H[pw=%d,bp=%d,fp=%d] V[pw=%d,bp=%d,fp=%d] pclk_neg=%d",
+             brd->HSYNC_PULSE_WIDTH, brd->HSYNC_BACK_PORCH, brd->HSYNC_FRONT_PORCH,
+             brd->VSYNC_PULSE_WIDTH, brd->VSYNC_BACK_PORCH, brd->VSYNC_FRONT_PORCH,
+             brd->PCLK_ACTIVE_NEG);
+    ESP_LOGI(TAG, "ic='%s' iface=%d", brd->LCD_DISP_IC_STR, brd->LCD_IFACE);
 
     /* 2. esp_lvgl_port owns the LVGL task + mutex. */
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
