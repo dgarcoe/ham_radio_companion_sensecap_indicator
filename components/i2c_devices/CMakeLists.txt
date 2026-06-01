@@ -1,7 +1,9 @@
 idf_component_register(
-    SRC_DIRS
-        "io_expander"
-        "touch_panel"
+    SRCS
+        "io_expander/tca9554.c"
+        "io_expander/tca9535.c"
+        "io_expander/ht8574.c"
+        "touch_panel/ft5x06.c"
     INCLUDE_DIRS
         "io_expander"
         "touch_panel/include"

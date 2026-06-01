@@ -6,13 +6,11 @@ idf_component_register(
         "src/peripherals/bsp_i2c.c"
         "src/peripherals/bsp_lcd.c"
         "src/indev/indev_tp.c"
-        "src/indev/xpt2046.c"
     INCLUDE_DIRS
         "include"
         "src"
         "src/boards"
         "src/indev"
-        "src/calibration"
         "src/codec"
     REQUIRES
         esp_lcd
