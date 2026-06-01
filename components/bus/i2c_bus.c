@@ -24,6 +24,9 @@
 #define I2C_ACK_CHECK_DIS 0x0     /*!< I2C master will not check ack from slave */
 #define I2C_BUS_FLG_DEFAULT (0)
 #define I2C_BUS_MASTER_BUF_LEN (0)
+#ifndef CONFIG_I2C_MS_TO_WAIT
+#define CONFIG_I2C_MS_TO_WAIT 200
+#endif
 #define I2C_BUS_MS_TO_WAIT CONFIG_I2C_MS_TO_WAIT
 #define I2C_BUS_TICKS_TO_WAIT (pdMS_TO_TICKS(I2C_BUS_MS_TO_WAIT))
 #define I2C_BUS_MUTEX_TICKS_TO_WAIT (pdMS_TO_TICKS(I2C_BUS_MS_TO_WAIT))
