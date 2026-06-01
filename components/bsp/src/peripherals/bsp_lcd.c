@@ -233,10 +233,11 @@ esp_err_t bsp_lcd_init(void)
                 .flags.pclk_active_neg = brd->PCLK_ACTIVE_NEG,
             },
             .flags.fb_in_psram = 1,
-#if CONFIG_LCD_AVOID_TEAR
+            /* Always allocate two framebuffers so esp_lvgl_port's
+             * avoid_tearing path can swap on vsync. We leave
+             * refresh_on_demand off so the panel keeps scanning
+             * autonomously. */
             .flags.double_fb = 1,
-            .flags.refresh_on_demand = 1,   // Mannually control refresh operation
-#endif
         };
         esp_lcd_new_rgb_panel(&panel_config, &panel_handle);
         esp_lcd_rgb_panel_event_callbacks_t cbs = {
@@ -346,6 +347,11 @@ esp_err_t bsp_lcd_set_cb(bool (*trans_done_cb)(void *), void *data)
     }
 
     return ESP_OK;
+}
+
+esp_lcd_panel_handle_t bsp_lcd_get_panel_handle(void)
+{
+    return panel_handle;
 }
 
 esp_err_t bsp_lcd_set_backlight(bool en)

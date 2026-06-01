@@ -77,6 +77,11 @@ esp_err_t bsp_spi_lcd_deinit(void);
  */
 esp_err_t bsp_lcd_set_backlight(bool en);
 
+/* Exposes the underlying esp_lcd panel handle so callers can wire it to
+ * higher-level libraries (e.g. esp_lvgl_port's RGB display helper). */
+#include "esp_lcd_panel_io.h"
+esp_lcd_panel_handle_t bsp_lcd_get_panel_handle(void);
+
 #if CONFIG_LCD_LVGL_FULL_REFRESH || CONFIG_LCD_LVGL_DIRECT_MODE
 /**
  * @brief Get two frame buffers created by rgb lcd
