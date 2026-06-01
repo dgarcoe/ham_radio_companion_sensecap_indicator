@@ -123,17 +123,17 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .GPIO_LCD_DATA14  = GPIO_NUM_1, // R3
     .GPIO_LCD_DATA15  = GPIO_NUM_0, // R4
 
-    /* GX panel porches (also identical for DX) - hard-coded for the same
-     * reason as the dimensions above. */
+    /* Match the ST7701S chip's internal VBP/VFP from 0xC1 register
+     * (0x0D, 0x02 in lcd_panel_st7701s_init) so the controller's frame
+     * total equals the chip's expected frame total. Mismatched totals
+     * make every frame start a few lines off from the previous one
+     * which presents as the content scrolling and wrapping. */
     .HSYNC_BACK_PORCH = 50,
     .HSYNC_FRONT_PORCH = 10,
     .HSYNC_PULSE_WIDTH = 8,
-    .VSYNC_BACK_PORCH = 20,
-    .VSYNC_FRONT_PORCH = 10,
-    .VSYNC_PULSE_WIDTH = 8,
-    /* PCLK on the rising edge had us latching data half a clock late and
-     * showing the framebuffer twice. ST7701S samples on the falling edge
-     * by default. */
+    .VSYNC_BACK_PORCH = 13,
+    .VSYNC_FRONT_PORCH = 2,
+    .VSYNC_PULSE_WIDTH = 2,
     .PCLK_ACTIVE_NEG = 1,
 
     .TOUCH_PANEL_I2C_ADDR = 0,
