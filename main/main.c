@@ -1,4 +1,5 @@
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -12,14 +13,35 @@
 static const char *TAG = "main";
 
 static app_config_t s_cfg;
+static esp_timer_handle_t s_reconfig_timer;
+
+/* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
+ * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
+ * from here. */
+static void reconfig_timer_cb(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "tearing down portal, switching to STA");
+    app_portal_stop();
+    app_wifi_apply(&s_cfg);
+}
 
 static void on_portal_saved(const app_config_t *new_cfg)
 {
     s_cfg = *new_cfg;
     app_nvs_save(&s_cfg);
     ui_set_callsign(s_cfg.callsign);
-    app_portal_stop();
-    app_wifi_apply(&s_cfg);
+
+    if (!s_reconfig_timer) {
+        const esp_timer_create_args_t args = {
+            .callback = reconfig_timer_cb,
+            .name = "wifi_reconfig",
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&args, &s_reconfig_timer));
+    }
+    /* 500 ms is enough for the HTTP response to flush and the worker to
+     * unwind. */
+    esp_timer_start_once(s_reconfig_timer, 500 * 1000);
 }
 
 static void on_wifi_state(app_wifi_state_t st, const char *ip)

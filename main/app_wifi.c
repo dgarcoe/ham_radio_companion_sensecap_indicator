@@ -51,8 +51,11 @@ static void start_ap_portal(void)
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        ESP_LOGI(TAG, "STA started, connecting...");
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *e = (wifi_event_sta_disconnected_t *)data;
+        ESP_LOGW(TAG, "STA disconnected, reason=%d", e ? e->reason : -1);
         if (s_state != APP_WIFI_AP_PORTAL && s_retry < MAX_STA_RETRY) {
             s_retry++;
             ESP_LOGW(TAG, "STA disconnect, retry %d/%d", s_retry, MAX_STA_RETRY);
@@ -100,6 +103,9 @@ static esp_err_t start_sta(const app_config_t *cfg)
     strncpy((char *)sc.sta.ssid, cfg->wifi_ssid, sizeof(sc.sta.ssid));
     strncpy((char *)sc.sta.password, cfg->wifi_psk, sizeof(sc.sta.password));
     sc.sta.threshold.authmode = WIFI_AUTH_OPEN;
+
+    ESP_LOGI(TAG, "starting STA -> SSID='%s' psk_len=%d",
+             cfg->wifi_ssid, (int)strlen(cfg->wifi_psk));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sc));
