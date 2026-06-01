@@ -7,4 +7,6 @@ idf_component_register(
         "touch_panel/include"
     REQUIRES
         bus
-        driver)
+        driver
+    PRIV_REQUIRES
+        bsp)

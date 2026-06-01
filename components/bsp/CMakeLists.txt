@@ -22,4 +22,5 @@ idf_component_register(
         esp_driver_ledc
         nvs_flash
         bus
+    PRIV_REQUIRES
         i2c_devices)
