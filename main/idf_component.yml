@@ -1,0 +1,8 @@
+## Managed dependencies for the SenseCAP Indicator D1L Ham Radio Companion.
+## The Seeed BSP brings in display (ST7701S RGB), touch (CST816), and exposes
+## an esp_lcd panel handle that LVGL hooks into.
+dependencies:
+  idf:
+    version: ">=5.1"
+  lvgl/lvgl: "~9.1.0"
+  seeed-studio/sensecap-indicator-bsp: "*"

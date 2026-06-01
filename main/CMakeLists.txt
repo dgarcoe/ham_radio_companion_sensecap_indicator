@@ -1,0 +1,28 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "app_nvs.c"
+        "app_wifi.c"
+        "app_portal.c"
+        "app_time.c"
+        "bsp.c"
+        "ui/ui.c"
+        "ui/ui_watch.c"
+        "ui/ui_settings.c"
+        "ui/ui_theme.c"
+    INCLUDE_DIRS
+        "."
+        "ui"
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_http_server
+        esp_lcd
+        lwip
+        json
+        spi_flash
+        driver
+        esp_timer
+)
