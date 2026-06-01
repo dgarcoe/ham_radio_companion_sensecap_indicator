@@ -1,0 +1,10 @@
+idf_component_register(
+    SRC_DIRS
+        "io_expander"
+        "touch_panel"
+    INCLUDE_DIRS
+        "io_expander"
+        "touch_panel/include"
+    REQUIRES
+        bus
+        driver)

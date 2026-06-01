@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "src/boards/bsp_board.c"
+        "src/boards/sensecap_indicator_board.c"
+        "src/boards/lcd_panel_config.c"
+        "src/peripherals/bsp_i2c.c"
+        "src/peripherals/bsp_lcd.c"
+        "src/indev/indev_tp.c"
+        "src/indev/xpt2046.c"
+    INCLUDE_DIRS
+        "include"
+        "src"
+        "src/boards"
+        "src/indev"
+        "src/calibration"
+        "src/codec"
+    REQUIRES
+        esp_lcd
+        driver
+        esp_driver_gpio
+        esp_driver_spi
+        esp_driver_ledc
+        nvs_flash
+        bus
+        i2c_devices)

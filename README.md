@@ -8,7 +8,8 @@ An ESP-IDF + LVGL companion for the Seeed Studio **SenseCAP Indicator D1L**
 Bootstrap, plus first feature:
 
 - [x] ESP-IDF project skeleton (ESP32-S3, 8 MB flash, 8 MB PSRAM)
-- [x] LVGL 9 + `espressif/sensecap_indicator` BSP (display, touch, backlight)
+- [x] LVGL 9 driving the ST7701S RGB display and the FT5x06 touch via a
+      stripped-down vendored copy of the Seeed SenseCAP Indicator BSP
 - [x] Dark + neon-accent theme
 - [x] **UTC watch screen** (HH:MM with neon seconds, date, day-of-year)
 - [x] NVS-backed config (callsign, locator, WiFi creds, TZ)
@@ -36,11 +37,12 @@ idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-The first build pulls `lvgl/lvgl`, `espressif/esp_lvgl_port`, and
-`espressif/sensecap_indicator` from the ESP component registry. The last
-one brings the ST7701S RGB display driver, the CHSC6540 touch driver,
-the I2C IO-expander code, and the backlight PWM — all wired to the D1L's
-pin map.
+The first build pulls `lvgl/lvgl` and `espressif/esp_lvgl_port` from the
+ESP component registry. The display + touch BSP is vendored under
+`./components/` (sourced from
+[`Seeed-Solution/SenseCAP_Indicator_ESP32`](https://github.com/Seeed-Solution/SenseCAP_Indicator_ESP32))
+with codec / button / LoRa / sensor code stripped out — only display,
+touch, and the I2C IO-expander remain.
 
 ## First boot
 

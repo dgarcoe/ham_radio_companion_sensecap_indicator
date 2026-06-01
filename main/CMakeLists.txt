@@ -25,4 +25,5 @@ idf_component_register(
         spi_flash
         driver
         esp_timer
+        bsp
 )
