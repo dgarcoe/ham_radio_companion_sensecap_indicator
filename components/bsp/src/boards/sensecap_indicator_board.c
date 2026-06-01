@@ -87,15 +87,14 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .BSP_INDEV_IS_TP =          (1),
 
     .LCD_IFACE =                (LCD_IFACE_RGB),
-#if CONFIG_SENSECAP_INDICATOR_SCREEN_GX
     .LCD_DISP_IC_STR =          "st7701",
-#else
-    .LCD_DISP_IC_STR =          "null",
-#endif
-    .LCD_FREQ =                 (CONFIG_LCD_EVB_SCREEN_FREQ * 1000 * 1000),
-
-    .LCD_WIDTH =       (CONFIG_LCD_EVB_SCREEN_WIDTH),
-    .LCD_HEIGHT =      (CONFIG_LCD_EVB_SCREEN_HEIGHT),
+    /* Hard-coded so we can't be tripped up by missing Kconfig defaults.
+     * Original used CONFIG_LCD_EVB_SCREEN_{WIDTH,HEIGHT,FREQ} which all
+     * silently fall to 0 when SCREEN_GX/DX aren't selected, producing a
+     * scan-stride mismatch (two horizontal copies of the framebuffer). */
+    .LCD_FREQ =                 (16 * 1000 * 1000),
+    .LCD_WIDTH =                480,
+    .LCD_HEIGHT =               480,
     .LCD_COLOR_SPACE = ESP_LCD_COLOR_SPACE_RGB,
 
     // RGB interface GPIOs for LCD panel
@@ -124,7 +123,8 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .GPIO_LCD_DATA14  = GPIO_NUM_1, // R3
     .GPIO_LCD_DATA15  = GPIO_NUM_0, // R4
 
-#ifdef CONFIG_SENSECAP_INDICATOR_SCREEN_GX
+    /* GX panel porches (also identical for DX) - hard-coded for the same
+     * reason as the dimensions above. */
     .HSYNC_BACK_PORCH = 50,
     .HSYNC_FRONT_PORCH = 10,
     .HSYNC_PULSE_WIDTH = 8,
@@ -132,23 +132,6 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .VSYNC_FRONT_PORCH = 10,
     .VSYNC_PULSE_WIDTH = 8,
     .PCLK_ACTIVE_NEG = 0,
-#elif defined CONFIG_SENSECAP_INDICATOR_SCREEN_DX
-    .HSYNC_BACK_PORCH = 50,
-    .HSYNC_FRONT_PORCH = 10,
-    .HSYNC_PULSE_WIDTH = 8,
-    .VSYNC_BACK_PORCH = 20,
-    .VSYNC_FRONT_PORCH = 10,
-    .VSYNC_PULSE_WIDTH = 8,
-    .PCLK_ACTIVE_NEG = 0,
-#elif defined CONFIG_LCD_EV_SUB_BOARD2
-    .HSYNC_BACK_PORCH = 20,
-    .HSYNC_FRONT_PORCH = 40,
-    .HSYNC_PULSE_WIDTH = 13,
-    .VSYNC_BACK_PORCH = 20,
-    .VSYNC_FRONT_PORCH = 40,
-    .VSYNC_PULSE_WIDTH = 15,
-    .PCLK_ACTIVE_NEG = 0,
-#endif
 
     .TOUCH_PANEL_I2C_ADDR = 0,
     .TOUCH_WITH_HOME_BUTTON = 0,
@@ -266,16 +249,9 @@ esp_err_t bsp_board_sensecap_indicator_init(void)
     //ESP_ERROR_CHECK(bsp_i2s_init(I2S_NUM_0, 16000));
     //ESP_ERROR_CHECK(bsp_codec_init(AUDIO_HAL_16K_SAMPLES));
     //bsp_led_set_rgb(0, 0, 0, 255);
-#if CONFIG_SENSECAP_INDICATOR_SCREEN_GX
+    /* Always run the ST7701S SPI init (was previously gated on
+     * CONFIG_SENSECAP_INDICATOR_SCREEN_GX which can silently be off). */
     lcd_panel_st7701s_init();
-#elif CONFIG_SENSECAP_INDICATOR_SCREEN_DX
-    if (g_board_lcd_evb_res.FUNC_IO_EXPANDER_EN) {
-        g_board_lcd_evb_io_expander_ops.set_level(EXPANDER_IO_LCD_CS, 1);
-        g_board_lcd_evb_io_expander_ops.set_level(EXPANDER_IO_LCD_RESET, 1);
-        g_board_lcd_evb_io_expander_ops.set_direction(EXPANDER_IO_LCD_CS, 1);
-        g_board_lcd_evb_io_expander_ops.set_direction(EXPANDER_IO_LCD_RESET, 1);
-    }
-#endif
     //bsp_led_set_rgb(0, 0, 0, 0);
 
     return ESP_OK;
