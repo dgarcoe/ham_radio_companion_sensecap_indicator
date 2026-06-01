@@ -48,13 +48,16 @@ esp_err_t bsp_display_start(void)
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     ESP_ERROR_CHECK(lvgl_port_init(&port_cfg));
 
-    /* 3. Hand the ST7701 RGB panel to esp_lvgl_port. It allocates a
-     *    bounce buffer, hooks the panel's vsync event for frame-sync,
-     *    and runs LVGL in direct mode against the panel's own
-     *    framebuffer — no tearing, no manual flush_cb. */
+    /* 3. Hand the ST7701 RGB panel to esp_lvgl_port. With
+     *    avoid_tearing + direct_mode the port:
+     *      - claims the panel's two PSRAM framebuffers as LVGL buffers,
+     *      - renders the full frame into the inactive one,
+     *      - on flush_is_last, swaps via esp_lcd_panel_draw_bitmap and
+     *        blocks on the vsync semaphore.
+     *    No partial writes into the live FB => no tearing / no flashing. */
     const lvgl_port_display_cfg_t disp_cfg = {
         .panel_handle = panel,
-        .buffer_size  = w * 40, /* bounce-buffer chunk size in pixels */
+        .buffer_size  = w * h,   /* overridden internally but required for the direct_mode size check */
         .double_buffer = true,
         .hres = w,
         .vres = h,
@@ -68,12 +71,12 @@ esp_err_t bsp_display_start(void)
         .flags = {
             .buff_dma = false,
             .buff_spiram = true,
+            .direct_mode = true,
         },
     };
     const lvgl_port_display_rgb_cfg_t rgb_cfg = {
         .flags = {
-            .bb_mode = true,        /* bounce-buffer mode keeps the panel scanning a clean frame */
-            .avoid_tearing = true,  /* triple-buffer w/ vsync sync */
+            .avoid_tearing = true,
         },
     };
     s_disp = lvgl_port_add_disp_rgb(&disp_cfg, &rgb_cfg);
