@@ -17,12 +17,8 @@ static void tick_cb(lv_timer_t *t)
     struct tm utc;
     app_time_now_utc(&utc);
 
-    /* One single label keeps the layout simple - no flex-row width
-     * surprises that clipped the hours. Recolor turns the trailing
-     * ":SS" cyan so the format keeps the original two-tone look. */
-    char buf[48];
-    snprintf(buf, sizeof(buf),
-             "%02d:%02d#00F0C8 :%02d#",
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02d:%02d:%02d",
              utc.tm_hour, utc.tm_min, utc.tm_sec);
     lv_label_set_text(s_time_lbl, buf);
 
@@ -55,13 +51,14 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     ui_theme_style_accent_chip(chip);
     lv_obj_set_style_text_font(chip, &lv_font_montserrat_14, 0);
 
-    /* Single big time label with inline recolor for the seconds. */
+    /* Single big time label, neon-accent color. LVGL 9 removed the
+     * legacy `lv_label_set_recolor` API; if we want two-tone seconds
+     * later we'll use lv_spangroup. */
     s_time_lbl = lv_label_create(scr);
-    lv_label_set_recolor(s_time_lbl, true);
-    lv_label_set_text(s_time_lbl, "--:--#00F0C8 :--#");
+    lv_label_set_text(s_time_lbl, "--:--:--");
     lv_obj_set_width(s_time_lbl, LV_SIZE_CONTENT);
     lv_obj_set_style_text_font(s_time_lbl, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(s_time_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_color(s_time_lbl, UI_COL_ACCENT, 0);
 
     s_date_lbl = lv_label_create(scr);
     lv_label_set_text(s_date_lbl, "-- --- ----");
