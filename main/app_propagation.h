@@ -4,12 +4,19 @@
 #include "esp_err.h"
 
 #define APP_PROP_MAX_BANDS 12
+#define APP_PROP_MAX_VHF   12
 
 typedef struct {
     char band[16];        /* "80m-40m" */
     char time[8];         /* "day" or "night" */
     char condition[12];   /* "Good", "Fair", "Poor" */
 } app_prop_band_t;
+
+typedef struct {
+    char name[24];        /* "E-Skip", "VHF Aurora", "6m EsEU" */
+    char location[24];    /* "europe", "north_america", ... */
+    char status[40];      /* "Band Open", "Band Closed", "Likely", ... */
+} app_prop_vhf_t;
 
 typedef struct {
     int  solar_flux;
@@ -22,6 +29,8 @@ typedef struct {
     char updated[40];
     app_prop_band_t bands[APP_PROP_MAX_BANDS];
     int  band_count;
+    app_prop_vhf_t  vhf[APP_PROP_MAX_VHF];
+    int  vhf_count;
     bool valid;
 } app_prop_data_t;
 

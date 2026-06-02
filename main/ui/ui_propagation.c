@@ -17,6 +17,7 @@ static lv_obj_t *s_lbl_xray;
 static lv_obj_t *s_lbl_geomag;
 static lv_obj_t *s_lbl_updated;
 static lv_obj_t *s_band_grid;
+static lv_obj_t *s_vhf_grid;
 
 static lv_color_t condition_color(const char *cond)
 {
@@ -24,6 +25,40 @@ static lv_color_t condition_color(const char *cond)
     if (strstr(cond, "Fair")) return lv_color_hex(0xffb020);
     if (strstr(cond, "Poor")) return lv_color_hex(0xff4d6d);
     return UI_COL_MUTED;
+}
+
+static bool contains_ci(const char *hay, const char *needle)
+{
+    /* strcasestr is non-portable; do a simple case-insensitive substring search. */
+    size_t nl = strlen(needle);
+    if (nl == 0) return true;
+    for (const char *p = hay; *p; p++) {
+        size_t i;
+        for (i = 0; i < nl; i++) {
+            char a = p[i], b = needle[i];
+            if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+            if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+            if (a == 0 || a != b) break;
+        }
+        if (i == nl) return true;
+    }
+    return false;
+}
+
+static lv_color_t vhf_status_color(const char *status)
+{
+    if (contains_ci(status, "open"))   return lv_color_hex(0x00d97e);
+    if (contains_ci(status, "likely")) return lv_color_hex(0xffb020);
+    if (contains_ci(status, "closed")) return lv_color_hex(0xff4d6d);
+    return UI_COL_MUTED;
+}
+
+static const char *band_status_text(const char *cond)
+{
+    if (strstr(cond, "Good")) return "OPEN";
+    if (strstr(cond, "Fair")) return "FAIR";
+    if (strstr(cond, "Poor")) return "CLOSED";
+    return cond[0] ? cond : "—";
 }
 
 static lv_obj_t *make_metric_card(lv_obj_t *parent,
@@ -71,7 +106,7 @@ static void refresh(const app_prop_data_t *d)
     snprintf(buf, sizeof(buf), "Updated %s", d->updated);
     lv_label_set_text(s_lbl_updated, buf);
 
-    /* Rebuild the band grid from scratch each refresh. */
+    /* Rebuild the HF band grid each refresh. */
     lv_obj_clean(s_band_grid);
     for (int i = 0; i < d->band_count; i++) {
         const app_prop_band_t *b = &d->bands[i];
@@ -93,8 +128,41 @@ static void refresh(const app_prop_data_t *d)
         lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
 
         lv_obj_t *c = lv_label_create(row);
-        lv_label_set_text(c, b->condition);
+        lv_label_set_text(c, band_status_text(b->condition));
         lv_obj_set_style_text_color(c, condition_color(b->condition), 0);
+        lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
+    }
+
+    /* VHF / E-skip / Aurora block. Single-column full-width rows. */
+    lv_obj_clean(s_vhf_grid);
+    for (int i = 0; i < d->vhf_count; i++) {
+        const app_prop_vhf_t *v = &d->vhf[i];
+
+        lv_obj_t *row = lv_obj_create(s_vhf_grid);
+        ui_theme_style_panel(row);
+        lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_hor(row, 10, 0);
+        lv_obj_set_style_pad_ver(row, 6, 0);
+
+        char left[48];
+        if (v->location[0]) {
+            snprintf(left, sizeof(left), "%s · %s", v->name, v->location);
+        } else {
+            snprintf(left, sizeof(left), "%s", v->name);
+        }
+        lv_obj_t *l = lv_label_create(row);
+        lv_label_set_text(l, left);
+        lv_obj_set_style_text_color(l, UI_COL_TEXT, 0);
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+        lv_obj_set_flex_grow(l, 1);
+
+        lv_obj_t *c = lv_label_create(row);
+        lv_label_set_text(c, v->status);
+        lv_obj_set_style_text_color(c, vhf_status_color(v->status), 0);
         lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
     }
 }
@@ -160,16 +228,34 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_label_set_text(s_lbl_geomag, "—");
     lv_obj_set_style_text_color(s_lbl_geomag, UI_COL_TEXT, 0);
 
+    /* HF band grid header */
+    lv_obj_t *hf_hdr = lv_label_create(scr);
+    lv_label_set_text(hf_hdr, "HF BANDS");
+    lv_obj_set_style_text_color(hf_hdr, UI_COL_MUTED, 0);
+    lv_obj_set_style_text_font(hf_hdr, &lv_font_montserrat_14, 0);
+
     /* Band grid (two columns) */
     s_band_grid = lv_obj_create(scr);
     lv_obj_remove_style_all(s_band_grid);
     lv_obj_set_width(s_band_grid, LV_PCT(100));
-    lv_obj_set_flex_grow(s_band_grid, 1);
+    lv_obj_set_height(s_band_grid, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(s_band_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(s_band_grid, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_gap(s_band_grid, 8, 0);
-    lv_obj_set_scroll_dir(s_band_grid, LV_DIR_VER);
+
+    /* VHF / E-skip / Aurora header + list */
+    lv_obj_t *vhf_hdr = lv_label_create(scr);
+    lv_label_set_text(vhf_hdr, "VHF / AURORA / E-SKIP");
+    lv_obj_set_style_text_color(vhf_hdr, UI_COL_MUTED, 0);
+    lv_obj_set_style_text_font(vhf_hdr, &lv_font_montserrat_14, 0);
+
+    s_vhf_grid = lv_obj_create(scr);
+    lv_obj_remove_style_all(s_vhf_grid);
+    lv_obj_set_width(s_vhf_grid, LV_PCT(100));
+    lv_obj_set_height(s_vhf_grid, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(s_vhf_grid, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(s_vhf_grid, 6, 0);
 
     /* Footer with last-updated stamp */
     s_lbl_updated = lv_label_create(scr);

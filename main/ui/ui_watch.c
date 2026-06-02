@@ -68,11 +68,13 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
 
     s_time_lbl = lv_label_create(time_row);
     lv_label_set_text(s_time_lbl, "--:--");
+    lv_label_set_long_mode(s_time_lbl, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(s_time_lbl, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(s_time_lbl, UI_COL_TEXT, 0);
 
     s_seconds_lbl = lv_label_create(time_row);
     lv_label_set_text(s_seconds_lbl, ":--");
+    lv_label_set_long_mode(s_seconds_lbl, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(s_seconds_lbl, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(s_seconds_lbl, UI_COL_ACCENT, 0);
     lv_obj_set_style_pad_bottom(s_seconds_lbl, 6, 0);

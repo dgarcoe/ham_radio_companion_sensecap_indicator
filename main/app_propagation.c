@@ -103,6 +103,36 @@ static void parse_bands(const char *xml, app_prop_data_t *data)
     }
 }
 
+static void parse_vhf(const char *xml, app_prop_data_t *data)
+{
+    data->vhf_count = 0;
+    const char *p = xml;
+    while ((p = strstr(p, "<phenomenon")) != NULL &&
+           data->vhf_count < APP_PROP_MAX_VHF) {
+        app_prop_vhf_t *v = &data->vhf[data->vhf_count];
+        v->name[0] = v->location[0] = v->status[0] = '\0';
+
+        extract_attr(p, "name",     v->name,     sizeof(v->name));
+        extract_attr(p, "location", v->location, sizeof(v->location));
+
+        const char *gt = strchr(p, '>');
+        if (gt) {
+            gt++;
+            const char *end = strstr(gt, "</phenomenon>");
+            if (end) {
+                size_t n = (size_t)(end - gt);
+                if (n >= sizeof(v->status)) n = sizeof(v->status) - 1;
+                memcpy(v->status, gt, n);
+                v->status[n] = '\0';
+            }
+        }
+        data->vhf_count++;
+        p = strstr(p, "</phenomenon>");
+        if (!p) break;
+        p += strlen("</phenomenon>");
+    }
+}
+
 static void parse_and_store(const char *xml)
 {
     app_prop_data_t d = {0};
@@ -115,45 +145,67 @@ static void parse_and_store(const char *xml)
     extract_tag(xml, "signalnoise", d.signal_noise, sizeof(d.signal_noise));
     extract_tag(xml, "updated",     d.updated,      sizeof(d.updated));
     parse_bands(xml, &d);
+    parse_vhf(xml,   &d);
     d.valid = true;
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     s_data = d;
     xSemaphoreGive(s_mutex);
 
-    ESP_LOGI(TAG, "SFI=%d SSN=%d A=%d K=%d bands=%d",
-             d.solar_flux, d.sunspots, d.a_index, d.k_index, d.band_count);
+    ESP_LOGI(TAG, "SFI=%d SSN=%d A=%d K=%d bands=%d vhf=%d",
+             d.solar_flux, d.sunspots, d.a_index, d.k_index,
+             d.band_count, d.vhf_count);
 
     if (s_cb) s_cb(&d);
 }
 
 static bool fetch_once(char *buf)
 {
+    ESP_LOGI(TAG, "GET %s", URL);
     esp_http_client_config_t cfg = {
-        .url = URL,
-        .timeout_ms = 15000,
+        .url           = URL,
+        .timeout_ms    = 15000,
+        .user_agent    = "HamRadioCompanion/1.0 (esp32s3)",
+        .disable_auto_redirect = false,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    if (!client) return false;
+    if (!client) {
+        ESP_LOGW(TAG, "http_client_init failed");
+        return false;
+    }
 
     bool ok = false;
-    if (esp_http_client_open(client, 0) == ESP_OK) {
-        esp_http_client_fetch_headers(client);
-        int total = 0, n;
-        while ((n = esp_http_client_read(client, buf + total,
-                                         BUF_SIZE - 1 - total)) > 0) {
-            total += n;
-            if (total >= BUF_SIZE - 1) break;
-        }
-        buf[total] = '\0';
-        if (total > 0) {
-            parse_and_store(buf);
-            ok = true;
-        } else {
-            ESP_LOGW(TAG, "empty response");
-        }
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "open failed: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    int content_len = esp_http_client_fetch_headers(client);
+    int status      = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "status=%d content-length=%d", status, content_len);
+
+    if (status != 200) {
+        ESP_LOGW(TAG, "non-200 response, giving up");
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    int total = 0, n;
+    while ((n = esp_http_client_read(client, buf + total,
+                                     BUF_SIZE - 1 - total)) > 0) {
+        total += n;
+        if (total >= BUF_SIZE - 1) break;
+    }
+    buf[total] = '\0';
+    ESP_LOGI(TAG, "got %d bytes", total);
+
+    if (total > 0) {
+        parse_and_store(buf);
+        ok = true;
     } else {
-        ESP_LOGW(TAG, "http open failed (wifi up?)");
+        ESP_LOGW(TAG, "empty body");
     }
     esp_http_client_cleanup(client);
     return ok;
