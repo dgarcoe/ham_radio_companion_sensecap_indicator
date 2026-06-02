@@ -190,6 +190,12 @@ esp_err_t app_propagation_init(app_prop_cb_t on_update)
 
 void app_propagation_get(app_prop_data_t *out)
 {
+    /* UI may call us before app_propagation_init has run (it's started
+     * lazily when WiFi connects). Return an empty/invalid snapshot. */
+    if (!s_mutex) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     *out = s_data;
     xSemaphoreGive(s_mutex);
