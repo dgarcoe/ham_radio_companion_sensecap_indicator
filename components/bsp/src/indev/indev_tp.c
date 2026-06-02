@@ -21,14 +21,30 @@ static bool s_ft_ok = false;
 
 esp_err_t indev_tp_init(void)
 {
-    /* Probe the FT5x06 address (0x48 on D1L) before init so we get a
-     * clear error if the chip isn't talking. */
-    esp_err_t probe = bsp_i2c_probe_addr(0x48);
-    if (probe != ESP_OK) {
-        ESP_LOGW(TAG, "FT5x06 NOT found at 0x48 (probe=%d) - touch will be dead", probe);
+    /* Scan the whole 7-bit I2C address space and log every device that
+     * responds. The FT5x06 is usually at 0x38 or 0x48; the TCA9554
+     * IO-expander at 0x20 or 0x39. If we don't see 0x38 / 0x48 here, the
+     * touch chip isn't on the bus and there's no point even trying. */
+    ESP_LOGI(TAG, "I2C scan:");
+    int found = 0;
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        if (bsp_i2c_probe_addr(addr) == ESP_OK) {
+            ESP_LOGI(TAG, "  device at 0x%02X", addr);
+            found++;
+        }
+    }
+    ESP_LOGI(TAG, "I2C scan done, %d device(s) responded", found);
+
+    /* Try the two known FT5x06 addresses, in order. */
+    uint8_t addr = 0;
+    if (bsp_i2c_probe_addr(0x48) == ESP_OK)      addr = 0x48;
+    else if (bsp_i2c_probe_addr(0x38) == ESP_OK) addr = 0x38;
+
+    if (addr == 0) {
+        ESP_LOGW(TAG, "FT5x06 not found at 0x48 or 0x38 - touch will be dead");
         return ESP_ERR_NOT_FOUND;
     }
-    ESP_LOGI(TAG, "FT5x06 detected at 0x48");
+    ESP_LOGI(TAG, "FT5x06 detected at 0x%02X", addr);
 
     esp_err_t ret = ft5x06_init();
     if (ret != ESP_OK) {
