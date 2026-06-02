@@ -8,12 +8,12 @@
 #include "bsp_i2c.h"
 #include "ft5x06.h"
 
-/** @brief FT5x06 register map and function codes */
-#if CONFIG_SENSECAP_INDICATOR_SCREEN_GX
+/** @brief FT5x06 register map and function codes
+ *
+ * Hard-coded to 0x48 - the D1L's FT5x06 lives there. The original gated
+ * this on CONFIG_SENSECAP_INDICATOR_SCREEN_GX which can silently be off,
+ * leaving touch dead. */
 #define FT5x06_ADDR            (0x48)
-#else
-#define FT5x06_ADDR            (0x38)
-#endif
 
 #define FT5x06_DEVICE_MODE      (0x00)
 #define FT5x06_GESTURE_ID       (0x01)
