@@ -54,7 +54,7 @@ static lv_obj_t *make_metric_card(lv_obj_t *parent,
 static void refresh(const app_prop_data_t *d)
 {
     if (!d || !d->valid) return;
-    char buf[32];
+    char buf[64];   /* "Updated %s" where %s is up to 40 chars */
 
     snprintf(buf, sizeof(buf), "%d", d->solar_flux);
     lv_label_set_text(s_lbl_sfi, buf);
