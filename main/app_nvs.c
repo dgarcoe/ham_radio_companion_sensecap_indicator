@@ -33,6 +33,9 @@ esp_err_t app_nvs_load(app_config_t *out)
 {
     memset(out, 0, sizeof(*out));
     strcpy(out->tz, "UTC0");
+    /* Sensible default cluster; user can change via settings later. */
+    strcpy(out->dx_host, "dxc.nc7j.com");
+    out->dx_port = 7373;
 
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
@@ -46,14 +49,20 @@ esp_err_t app_nvs_load(app_config_t *out)
     read_str(h, "ssid",     out->wifi_ssid,sizeof(out->wifi_ssid));
     read_str(h, "psk",      out->wifi_psk, sizeof(out->wifi_psk));
     read_str(h, "tz",       out->tz,       sizeof(out->tz));
+    read_str(h, "dx_host",  out->dx_host,  sizeof(out->dx_host));
+    int32_t port = 0;
+    if (nvs_get_i32(h, "dx_port", &port) == ESP_OK && port > 0) {
+        out->dx_port = port;
+    }
 
     uint8_t cfg = 0;
     nvs_get_u8(h, "cfg", &cfg);
     out->configured = cfg != 0;
 
     nvs_close(h);
-    ESP_LOGI(TAG, "loaded: callsign='%s' ssid='%s' configured=%d",
-             out->callsign, out->wifi_ssid, out->configured);
+    ESP_LOGI(TAG, "loaded: callsign='%s' ssid='%s' dx=%s:%d configured=%d",
+             out->callsign, out->wifi_ssid, out->dx_host, out->dx_port,
+             out->configured);
     return ESP_OK;
 }
 
@@ -66,6 +75,8 @@ esp_err_t app_nvs_save(const app_config_t *cfg)
     nvs_set_str(h, "ssid",     cfg->wifi_ssid);
     nvs_set_str(h, "psk",      cfg->wifi_psk);
     nvs_set_str(h, "tz",       cfg->tz);
+    nvs_set_str(h, "dx_host",  cfg->dx_host);
+    nvs_set_i32(h, "dx_port",  cfg->dx_port);
     nvs_set_u8(h, "cfg", cfg->configured ? 1 : 0);
     esp_err_t err = nvs_commit(h);
     nvs_close(h);

@@ -9,6 +9,7 @@
 #define APP_SSID_MAX     33
 #define APP_PSK_MAX      65
 #define APP_TZ_MAX       32
+#define APP_DX_HOST_MAX  64
 
 typedef struct {
     char callsign[APP_CALLSIGN_MAX];
@@ -16,6 +17,8 @@ typedef struct {
     char wifi_ssid[APP_SSID_MAX];
     char wifi_psk[APP_PSK_MAX];
     char tz[APP_TZ_MAX];
+    char dx_host[APP_DX_HOST_MAX];
+    int  dx_port;
     bool configured;
 } app_config_t;
 

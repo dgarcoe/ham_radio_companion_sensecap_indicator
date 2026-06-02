@@ -3,6 +3,7 @@
 #include "lvgl.h"
 #include "ui.h"
 #include "app_propagation.h"
+#include "app_dxcluster.h"
 
 /* Each screen creator renders into `parent` and owns all children. */
 lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg);
@@ -19,3 +20,6 @@ void ui_watch_register_tick(lv_obj_t *screen);
 /* Propagation pushes data updates into its screen; thread-safe (takes
  * the LVGL lock internally). */
 void ui_propagation_on_update(const app_prop_data_t *data);
+
+/* DX cluster pushes new spot + state updates into its screen; thread-safe. */
+void ui_dx_on_update(const app_dx_spot_t *new_spot, const app_dx_state_t *state);

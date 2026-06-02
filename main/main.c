@@ -8,6 +8,7 @@
 #include "app_portal.h"
 #include "app_time.h"
 #include "app_propagation.h"
+#include "app_dxcluster.h"
 #include "bsp.h"
 #include "ui/ui.h"
 #include "ui/ui_internal.h"
@@ -17,6 +18,7 @@ static const char *TAG = "main";
 static app_config_t s_cfg;
 static esp_timer_handle_t s_reconfig_timer;
 static bool s_prop_started;
+static bool s_dx_started;
 
 /* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
  * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
@@ -70,6 +72,13 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
             s_prop_started = true;
         } else {
             app_propagation_request_refresh();
+        }
+        /* DX cluster needs a callsign to log in. Skip cleanly if missing. */
+        if (!s_dx_started && s_cfg.callsign[0] && s_cfg.dx_host[0]) {
+            ESP_ERROR_CHECK(app_dxcluster_init(s_cfg.dx_host, s_cfg.dx_port,
+                                               s_cfg.callsign,
+                                               ui_dx_on_update));
+            s_dx_started = true;
         }
     }
 }
