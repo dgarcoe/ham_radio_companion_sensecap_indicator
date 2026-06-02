@@ -16,3 +16,9 @@ void ui_set_callsign(const char *callsign);
 void ui_show_watch(void);
 void ui_show_menu(void);
 void ui_show_feature(int feature_index);   /* index into ui_screens[] */
+
+/* Settings screen calls this when the user taps "Save". The callback
+ * receives the new config; the caller is responsible for persisting it
+ * (NVS) and applying it (WiFi, status-bar callsign, etc.). */
+typedef void (*ui_settings_saved_cb_t)(const app_config_t *cfg);
+void ui_settings_set_saved_cb(ui_settings_saved_cb_t cb);

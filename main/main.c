@@ -7,13 +7,16 @@
 #include "app_wifi.h"
 #include "app_portal.h"
 #include "app_time.h"
+#include "app_propagation.h"
 #include "bsp.h"
 #include "ui/ui.h"
+#include "ui/ui_internal.h"
 
 static const char *TAG = "main";
 
 static app_config_t s_cfg;
 static esp_timer_handle_t s_reconfig_timer;
+static bool s_prop_started;
 
 /* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
  * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
@@ -44,6 +47,16 @@ static void on_portal_saved(const app_config_t *new_cfg)
     esp_timer_start_once(s_reconfig_timer, 500 * 1000);
 }
 
+/* Settings screen "Save" -> persist + apply. */
+static void on_settings_saved(const app_config_t *new_cfg)
+{
+    s_cfg = *new_cfg;
+    app_nvs_save(&s_cfg);
+    ui_set_callsign(s_cfg.callsign);
+    ESP_LOGI(TAG, "settings saved: callsign='%s' locator='%s' tz='%s'",
+             s_cfg.callsign, s_cfg.locator, s_cfg.tz);
+}
+
 static void on_wifi_state(app_wifi_state_t st, const char *ip)
 {
     ESP_LOGI(TAG, "wifi -> %d (%s)", st, ip ? ip : "");
@@ -51,6 +64,13 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
 
     if (st == APP_WIFI_AP_PORTAL) {
         app_portal_start(&s_cfg, on_portal_saved);
+    } else if (st == APP_WIFI_CONNECTED) {
+        if (!s_prop_started) {
+            ESP_ERROR_CHECK(app_propagation_init(ui_propagation_on_update));
+            s_prop_started = true;
+        } else {
+            app_propagation_request_refresh();
+        }
     }
 }
 
@@ -77,6 +97,7 @@ void app_main(void)
 
     if (bsp_lvgl_lock(-1)) {
         ui_init(&s_cfg);
+        ui_settings_set_saved_cb(on_settings_saved);
         bsp_lvgl_unlock();
     }
 

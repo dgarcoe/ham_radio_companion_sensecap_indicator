@@ -5,6 +5,7 @@ idf_component_register(
         "app_wifi.c"
         "app_portal.c"
         "app_time.c"
+        "app_propagation.c"
         "bsp.c"
         "ui/ui.c"
         "ui/ui_watch.c"
@@ -25,6 +26,7 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_http_client
         esp_lcd
         lwip
         json

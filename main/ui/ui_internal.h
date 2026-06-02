@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 #include "ui.h"
+#include "app_propagation.h"
 
 /* Each screen creator renders into `parent` and owns all children. */
 lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg);
@@ -14,3 +15,7 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg);
 
 /* Drives the watch's seconds tick. Owned by ui.c, called by ui_watch.c. */
 void ui_watch_register_tick(lv_obj_t *screen);
+
+/* Propagation pushes data updates into its screen; thread-safe (takes
+ * the LVGL lock internally). */
+void ui_propagation_on_update(const app_prop_data_t *data);
