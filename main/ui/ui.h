@@ -12,6 +12,7 @@ void ui_set_wifi(app_wifi_state_t st, const char *ip_or_ap);
 void ui_set_time_synced(bool synced);
 void ui_set_callsign(const char *callsign);
 
-/* Screen routing. */
+/* Navigation. */
 void ui_show_watch(void);
-void ui_show_settings(void);
+void ui_show_menu(void);
+void ui_show_feature(int feature_index);   /* index into ui_screens[] */
