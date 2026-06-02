@@ -93,13 +93,19 @@ esp_err_t bsp_display_start(void)
         return ESP_FAIL;
     }
 
-    /* 4. Touch indev (FT5x06 reads through the BSP). */
-    if (lvgl_port_lock(0)) {
+    /* 4. Touch indev (FT5x06 reads through the BSP).
+     *    Use a real timeout - lvgl_port_lock(0) fails silently when the
+     *    port's task is mid-flush, which left the indev never created
+     *    and touch silently dropped. */
+    if (lvgl_port_lock(500)) {
         lv_indev_t *indev = lv_indev_create();
         lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
         lv_indev_set_read_cb(indev, touch_read_cb);
         lv_indev_set_display(indev, s_disp);
         lvgl_port_unlock();
+        ESP_LOGI(TAG, "touch indev registered with LVGL");
+    } else {
+        ESP_LOGE(TAG, "could not lock LVGL to register touch indev");
     }
 
     bsp_lcd_set_backlight(true);
