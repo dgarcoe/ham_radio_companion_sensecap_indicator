@@ -86,6 +86,45 @@ static lv_obj_t *make_metric_card(lv_obj_t *parent,
     return card;
 }
 
+static lv_obj_t *make_band_row(lv_obj_t *parent, const char *band, const char *condition)
+{
+    lv_obj_t *row = lv_obj_create(parent);
+    ui_theme_style_panel(row);
+    lv_obj_set_size(row, LV_PCT(100), 40);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_hor(row, 10, 0);
+    lv_obj_set_style_pad_ver(row, 4, 0);
+
+    lv_obj_t *l = lv_label_create(row);
+    lv_label_set_text(l, band);
+    lv_obj_set_style_text_color(l, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+
+    lv_obj_t *c = lv_label_create(row);
+    lv_label_set_text(c, band_status_text(condition));
+    lv_obj_set_style_text_color(c, condition_color(condition), 0);
+    lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
+    return row;
+}
+
+static lv_obj_t *make_band_column(lv_obj_t *parent, const char *title)
+{
+    lv_obj_t *col = lv_obj_create(parent);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_flex_grow(col, 1);
+    lv_obj_set_height(col, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(col, 6, 0);
+
+    lv_obj_t *hdr = lv_label_create(col);
+    lv_label_set_text(hdr, title);
+    lv_obj_set_style_text_color(hdr, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(hdr, &lv_font_montserrat_14, 0);
+    return col;
+}
+
 static void refresh(const app_prop_data_t *d)
 {
     if (!d || !d->valid) return;
@@ -106,31 +145,18 @@ static void refresh(const app_prop_data_t *d)
     snprintf(buf, sizeof(buf), "Updated %s", d->updated);
     lv_label_set_text(s_lbl_updated, buf);
 
-    /* Rebuild the HF band grid each refresh. */
+    /* Rebuild HF section as two columns: DAY on left, NIGHT on right. */
     lv_obj_clean(s_band_grid);
+    lv_obj_t *day_col   = make_band_column(s_band_grid, "DAY");
+    lv_obj_t *night_col = make_band_column(s_band_grid, "NIGHT");
+
     for (int i = 0; i < d->band_count; i++) {
         const app_prop_band_t *b = &d->bands[i];
-
-        lv_obj_t *row = lv_obj_create(s_band_grid);
-        ui_theme_style_panel(row);
-        lv_obj_set_size(row, LV_PCT(48), 44);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN,
-                              LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_hor(row, 10, 0);
-        lv_obj_set_style_pad_ver(row, 4, 0);
-
-        char left[24];
-        snprintf(left, sizeof(left), "%s · %s", b->band, b->time);
-        lv_obj_t *l = lv_label_create(row);
-        lv_label_set_text(l, left);
-        lv_obj_set_style_text_color(l, UI_COL_TEXT, 0);
-        lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
-
-        lv_obj_t *c = lv_label_create(row);
-        lv_label_set_text(c, band_status_text(b->condition));
-        lv_obj_set_style_text_color(c, condition_color(b->condition), 0);
-        lv_obj_set_style_text_font(c, &lv_font_montserrat_14, 0);
+        if (strcmp(b->time, "day") == 0) {
+            make_band_row(day_col, b->band, b->condition);
+        } else if (strcmp(b->time, "night") == 0) {
+            make_band_row(night_col, b->band, b->condition);
+        }
     }
 
     /* VHF / E-skip / Aurora block. Single-column full-width rows. */
@@ -149,7 +175,7 @@ static void refresh(const app_prop_data_t *d)
 
         char left[48];
         if (v->location[0]) {
-            snprintf(left, sizeof(left), "%s · %s", v->name, v->location);
+            snprintf(left, sizeof(left), "%s (%s)", v->name, v->location);
         } else {
             snprintf(left, sizeof(left), "%s", v->name);
         }
@@ -234,12 +260,13 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(hf_hdr, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(hf_hdr, &lv_font_montserrat_14, 0);
 
-    /* Band grid (two columns) */
+    /* HF section: two real columns (DAY, NIGHT) side by side, populated
+     * during refresh. */
     s_band_grid = lv_obj_create(scr);
     lv_obj_remove_style_all(s_band_grid);
     lv_obj_set_width(s_band_grid, LV_PCT(100));
     lv_obj_set_height(s_band_grid, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(s_band_grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_flow(s_band_grid, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_band_grid, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_gap(s_band_grid, 8, 0);
