@@ -23,6 +23,11 @@ CONFIG_FREERTOS_HZ=1000
 # LWIP
 CONFIG_LWIP_LOCAL_HOSTNAME="hamcompanion"
 
+# mbedTLS cert bundle (used by esp_http_client over HTTPS for the
+# propagation fetcher and any future TLS endpoints).
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
 # SenseCAP Indicator D1L panel selection (BSP)
 CONFIG_LCD_BOARD_SENSECAP_INDICATOR_D1L=y
 CONFIG_SENSECAP_INDICATOR_SCREEN_GX=y

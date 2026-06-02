@@ -6,13 +6,17 @@
 
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
 static const char *TAG = "prop";
-static const char *URL = "http://www.hamqsl.com/solarxml.php";
+/* hamqsl serves plain HTTP with a 301 redirect to HTTPS, and
+ * esp_http_client_perform follows redirects automatically when given a
+ * cert bundle, so just go straight to HTTPS. */
+static const char *URL = "https://www.hamqsl.com/solarxml.php";
 
 #define BUF_SIZE             (16 * 1024)
 #define REFRESH_INTERVAL_MS  (15 * 60 * 1000)
@@ -23,8 +27,13 @@ static SemaphoreHandle_t s_mutex;
 static SemaphoreHandle_t s_poke;
 static app_prop_cb_t s_cb;
 
-/* --- Tiny XML scrapers. The hamqsl XML is well-formed and predictable
- * so we don't need a real parser, just substring search. */
+typedef struct {
+    char  *buf;
+    size_t cap;
+    size_t total;
+} fetch_ctx_t;
+
+/* --- Tiny XML scrapers. --- */
 
 static void extract_tag(const char *xml, const char *tag, char *out, size_t out_sz)
 {
@@ -52,7 +61,6 @@ static int extract_tag_int(const char *xml, const char *tag)
     return buf[0] ? atoi(buf) : 0;
 }
 
-/* Extract attribute "key" from the tag at `tag_start` (pointing at '<'). */
 static void extract_attr(const char *tag_start, const char *key,
                          char *out, size_t out_sz)
 {
@@ -159,13 +167,34 @@ static void parse_and_store(const char *xml)
     if (s_cb) s_cb(&d);
 }
 
+/* esp_http_client streams the body in chunks; accumulate into our buf. */
+static esp_err_t http_event(esp_http_client_event_t *evt)
+{
+    if (evt->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
+    fetch_ctx_t *ctx = (fetch_ctx_t *)evt->user_data;
+    if (!ctx || !ctx->buf) return ESP_OK;
+    size_t room = ctx->cap - 1 - ctx->total;
+    size_t n = evt->data_len > 0 ? (size_t)evt->data_len : 0;
+    if (n > room) n = room;
+    if (n) {
+        memcpy(ctx->buf + ctx->total, evt->data, n);
+        ctx->total += n;
+    }
+    return ESP_OK;
+}
+
 static bool fetch_once(char *buf)
 {
+    fetch_ctx_t ctx = { .buf = buf, .cap = BUF_SIZE, .total = 0 };
+
     ESP_LOGI(TAG, "GET %s", URL);
     esp_http_client_config_t cfg = {
-        .url           = URL,
-        .timeout_ms    = 15000,
-        .user_agent    = "HamRadioCompanion/1.0 (esp32s3)",
+        .url                  = URL,
+        .timeout_ms           = 15000,
+        .user_agent           = "HamRadioCompanion/1.0 (esp32s3)",
+        .event_handler        = http_event,
+        .user_data            = &ctx,
+        .crt_bundle_attach    = esp_crt_bundle_attach,
         .disable_auto_redirect = false,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
@@ -174,38 +203,16 @@ static bool fetch_once(char *buf)
         return false;
     }
 
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "perform err=%s status=%d bytes=%u",
+             esp_err_to_name(err), status, (unsigned)ctx.total);
+
     bool ok = false;
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "open failed: %s", esp_err_to_name(err));
-        esp_http_client_cleanup(client);
-        return false;
-    }
-
-    int content_len = esp_http_client_fetch_headers(client);
-    int status      = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "status=%d content-length=%d", status, content_len);
-
-    if (status != 200) {
-        ESP_LOGW(TAG, "non-200 response, giving up");
-        esp_http_client_cleanup(client);
-        return false;
-    }
-
-    int total = 0, n;
-    while ((n = esp_http_client_read(client, buf + total,
-                                     BUF_SIZE - 1 - total)) > 0) {
-        total += n;
-        if (total >= BUF_SIZE - 1) break;
-    }
-    buf[total] = '\0';
-    ESP_LOGI(TAG, "got %d bytes", total);
-
-    if (total > 0) {
+    if (err == ESP_OK && status == 200 && ctx.total > 0) {
+        buf[ctx.total] = '\0';
         parse_and_store(buf);
         ok = true;
-    } else {
-        ESP_LOGW(TAG, "empty body");
     }
     esp_http_client_cleanup(client);
     return ok;
@@ -224,7 +231,6 @@ static void fetch_task(void *arg)
     for (;;) {
         bool ok = fetch_once(buf);
         uint32_t wait_ms = ok ? REFRESH_INTERVAL_MS : RETRY_INTERVAL_MS;
-        /* Sleep until either the interval passes or someone pokes us. */
         xSemaphoreTake(s_poke, pdMS_TO_TICKS(wait_ms));
     }
 }
@@ -242,8 +248,6 @@ esp_err_t app_propagation_init(app_prop_cb_t on_update)
 
 void app_propagation_get(app_prop_data_t *out)
 {
-    /* UI may call us before app_propagation_init has run (it's started
-     * lazily when WiFi connects). Return an empty/invalid snapshot. */
     if (!s_mutex) {
         memset(out, 0, sizeof(*out));
         return;
