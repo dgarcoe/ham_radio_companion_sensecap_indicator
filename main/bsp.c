@@ -52,8 +52,11 @@ esp_err_t bsp_display_start(void)
              brd->PCLK_ACTIVE_NEG);
     ESP_LOGI(TAG, "ic='%s' iface=%d", brd->LCD_DISP_IC_STR, brd->LCD_IFACE);
 
-    /* 2. esp_lvgl_port owns the LVGL task + mutex. */
+    /* 2. esp_lvgl_port owns the LVGL task + mutex. Bump the task stack
+     *    from the default 4 KB - rebuilding the propagation panel
+     *    (clean + many lv_obj_create + lv_label_create) overflows it. */
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    port_cfg.task_stack = 8 * 1024;
     ESP_ERROR_CHECK(lvgl_port_init(&port_cfg));
 
     /* 3. Hand the ST7701 RGB panel to esp_lvgl_port. With
