@@ -59,8 +59,10 @@ static const board_res_desc_t g_board_lcd_evb_res = {
     .LCD_MIRROR_X =             (0),
     .LCD_MIRROR_Y =             (0),
     .TOUCH_PANEL_SWAP_XY =      (0),
-    .TOUCH_PANEL_INVERSE_X =    (0),
-    .TOUCH_PANEL_INVERSE_Y =    (0),
+    /* D1L's FT5x06 reads origin at the opposite corner from the panel
+     * display origin - invert both axes to align taps with pixels. */
+    .TOUCH_PANEL_INVERSE_X =    (1),
+    .TOUCH_PANEL_INVERSE_Y =    (1),
 #elif CONFIG_LCD_EVB_SCREEN_ROTATION_90
     .LCD_SWAP_XY =              (1),
     .LCD_MIRROR_X =             (0),

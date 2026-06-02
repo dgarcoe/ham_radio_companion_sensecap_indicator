@@ -46,7 +46,7 @@ static void build_status_bar(lv_obj_t *parent)
 {
     s_status_bar = lv_obj_create(parent);
     lv_obj_remove_style_all(s_status_bar);
-    lv_obj_set_size(s_status_bar, LV_PCT(100), 40);
+    lv_obj_set_size(s_status_bar, LV_PCT(100), 52);
     lv_obj_set_style_pad_hor(s_status_bar, 16, 0);
     lv_obj_set_flex_flow(s_status_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_status_bar, LV_FLEX_ALIGN_SPACE_BETWEEN,
@@ -86,7 +86,7 @@ static void build_status_bar(lv_obj_t *parent)
 
     lv_obj_t *nav = lv_obj_create(right);
     lv_obj_remove_style_all(nav);
-    lv_obj_set_size(nav, 32, 32);
+    lv_obj_set_size(nav, 44, 44);
     lv_obj_add_flag(nav, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_flow(nav, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(nav, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -94,7 +94,7 @@ static void build_status_bar(lv_obj_t *parent)
     s_lbl_nav_icon = lv_label_create(nav);
     lv_label_set_text(s_lbl_nav_icon, LV_SYMBOL_LIST);
     lv_obj_set_style_text_color(s_lbl_nav_icon, UI_COL_ACCENT, 0);
-    lv_obj_set_style_text_font(s_lbl_nav_icon, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(s_lbl_nav_icon, &lv_font_montserrat_24, 0);
 
     lv_obj_add_event_cb(nav, on_nav_clicked, LV_EVENT_CLICKED, NULL);
 }
