@@ -4,10 +4,14 @@
 #include "ui.h"
 
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 static lv_obj_t *s_ta_callsign;
 static lv_obj_t *s_ta_locator;
 static lv_obj_t *s_ta_tz;
+static lv_obj_t *s_ta_dx_host;
+static lv_obj_t *s_ta_dx_port;
 static lv_obj_t *s_kb;
 static lv_obj_t *s_lbl_status;
 
@@ -23,6 +27,12 @@ static void on_focus(lv_event_t *e)
 {
     lv_obj_t *ta = lv_event_get_target(e);
     lv_keyboard_set_textarea(s_kb, ta);
+    /* Number keypad for the port field, normal text keyboard otherwise. */
+    if (ta == s_ta_dx_port) {
+        lv_keyboard_set_mode(s_kb, LV_KEYBOARD_MODE_NUMBER);
+    } else {
+        lv_keyboard_set_mode(s_kb, LV_KEYBOARD_MODE_TEXT_UPPER);
+    }
     lv_obj_remove_flag(s_kb, LV_OBJ_FLAG_HIDDEN);
     lv_obj_scroll_to_view(ta, LV_ANIM_ON);
 }
@@ -43,6 +53,12 @@ static void on_save_clicked(lv_event_t *e)
     s_local.locator[sizeof(s_local.locator) - 1] = '\0';
     strncpy(s_local.tz,       lv_textarea_get_text(s_ta_tz),       sizeof(s_local.tz) - 1);
     s_local.tz[sizeof(s_local.tz) - 1] = '\0';
+    strncpy(s_local.dx_host,  lv_textarea_get_text(s_ta_dx_host),  sizeof(s_local.dx_host) - 1);
+    s_local.dx_host[sizeof(s_local.dx_host) - 1] = '\0';
+
+    int port = atoi(lv_textarea_get_text(s_ta_dx_port));
+    if (port > 0 && port < 65536) s_local.dx_port = port;
+
     s_local.configured = (s_local.callsign[0] != '\0' && s_local.wifi_ssid[0] != '\0');
 
     if (s_saved_cb) s_saved_cb(&s_local);
@@ -92,10 +108,22 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_pad_gap(scr, 10, 0);
     lv_obj_set_scroll_dir(scr, LV_DIR_VER);
 
-    /* Fields */
-    make_field(scr, "Callsign", s_local.callsign, APP_CALLSIGN_MAX - 1, &s_ta_callsign);
-    make_field(scr, "Grid locator", s_local.locator, APP_LOCATOR_MAX - 1, &s_ta_locator);
-    make_field(scr, "Timezone (POSIX TZ)", s_local.tz, APP_TZ_MAX - 1, &s_ta_tz);
+    /* Station fields */
+    make_field(scr, "Callsign",            s_local.callsign, APP_CALLSIGN_MAX - 1, &s_ta_callsign);
+    make_field(scr, "Grid locator",        s_local.locator,  APP_LOCATOR_MAX - 1,  &s_ta_locator);
+    make_field(scr, "Timezone (POSIX TZ)", s_local.tz,       APP_TZ_MAX - 1,       &s_ta_tz);
+
+    /* DX cluster */
+    lv_obj_t *cluster_hdr = lv_label_create(scr);
+    lv_label_set_text(cluster_hdr, "DX CLUSTER");
+    lv_obj_set_style_text_color(cluster_hdr, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(cluster_hdr, &lv_font_montserrat_14, 0);
+
+    make_field(scr, "Host", s_local.dx_host, APP_DX_HOST_MAX - 1, &s_ta_dx_host);
+
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%d", s_local.dx_port);
+    make_field(scr, "Port", port_str, 5, &s_ta_dx_port);
 
     /* Save button */
     lv_obj_t *save = lv_button_create(scr);
@@ -118,8 +146,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_lbl_status, LV_PCT(100));
 
-    /* Keyboard - sibling of the field list so it can overlay the bottom
-     * of the screen without being constrained by the column flex. */
+    /* Keyboard - sibling of the fields. Mode is set per-textarea in on_focus. */
     s_kb = lv_keyboard_create(scr);
     lv_keyboard_set_mode(s_kb, LV_KEYBOARD_MODE_TEXT_UPPER);
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_HIDDEN);

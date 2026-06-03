@@ -55,8 +55,17 @@ static void on_settings_saved(const app_config_t *new_cfg)
     s_cfg = *new_cfg;
     app_nvs_save(&s_cfg);
     ui_set_callsign(s_cfg.callsign);
-    ESP_LOGI(TAG, "settings saved: callsign='%s' locator='%s' tz='%s'",
-             s_cfg.callsign, s_cfg.locator, s_cfg.tz);
+    ESP_LOGI(TAG, "settings saved: callsign='%s' locator='%s' tz='%s' dx=%s:%d",
+             s_cfg.callsign, s_cfg.locator, s_cfg.tz,
+             s_cfg.dx_host, s_cfg.dx_port);
+
+    /* If the DX cluster is already running, push the new endpoint /
+     * callsign at it. If it hasn't started yet (no WiFi or no callsign
+     * earlier), the on_wifi_state path will pick up the new values when
+     * WiFi connects. */
+    if (s_dx_started) {
+        app_dxcluster_reconfigure(s_cfg.dx_host, s_cfg.dx_port, s_cfg.callsign);
+    }
 }
 
 static void on_wifi_state(app_wifi_state_t st, const char *ip)

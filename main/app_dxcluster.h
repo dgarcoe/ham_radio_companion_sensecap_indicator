@@ -34,5 +34,11 @@ esp_err_t app_dxcluster_init(const char *host, int port,
                              const char *login_call,
                              app_dx_cb_t cb);
 
+/* Replace the cluster endpoint and/or login at runtime (called when the
+ * user saves new values in the settings screen). The current session is
+ * torn down and a fresh connection is made to the new host. */
+void app_dxcluster_reconfigure(const char *host, int port,
+                               const char *login_call);
+
 /* Snapshot of the spot ring + connection state. Safe before init. */
 void app_dxcluster_get(app_dx_state_t *out);

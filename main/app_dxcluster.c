@@ -21,6 +21,8 @@ static int      s_port;
 static char     s_login[16];
 static app_dx_cb_t       s_cb;
 static SemaphoreHandle_t s_mutex;
+static SemaphoreHandle_t s_kick;     /* poked to break reconnect-sleep */
+static volatile int      s_sock = -1; /* current socket, -1 when idle */
 static app_dx_state_t    s_state;
 
 /* --- Spot line parser ---
@@ -220,12 +222,15 @@ static void dx_task(void *arg)
     for (;;) {
         int sock = connect_cluster();
         if (sock >= 0) {
+            s_sock = sock;
             ESP_LOGI(TAG, "connected to %s:%d", s_host, s_port);
             session(sock);
+            s_sock = -1;
             close(sock);
         }
-        ESP_LOGI(TAG, "reconnect in 30s");
-        vTaskDelay(pdMS_TO_TICKS(30 * 1000));
+        ESP_LOGI(TAG, "reconnect in 30s (or on settings change)");
+        /* Sleep up to 30s, but wake immediately if reconfigure poked us. */
+        xSemaphoreTake(s_kick, pdMS_TO_TICKS(30 * 1000));
     }
 }
 
@@ -241,10 +246,42 @@ esp_err_t app_dxcluster_init(const char *host, int port,
     s_login[sizeof(s_login) - 1] = '\0';
     s_cb = cb;
     s_mutex = xSemaphoreCreateMutex();
+    s_kick  = xSemaphoreCreateBinary();
     if (xTaskCreate(dx_task, "dx", 5120, NULL, 2, NULL) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;
+}
+
+void app_dxcluster_reconfigure(const char *host, int port,
+                               const char *login_call)
+{
+    bool changed = false;
+    if (host && *host && strncmp(s_host, host, sizeof(s_host)) != 0) {
+        strncpy(s_host, host, sizeof(s_host) - 1);
+        s_host[sizeof(s_host) - 1] = '\0';
+        changed = true;
+    }
+    if (port > 0 && port != s_port) {
+        s_port = port;
+        changed = true;
+    }
+    if (login_call && *login_call &&
+        strncmp(s_login, login_call, sizeof(s_login)) != 0) {
+        strncpy(s_login, login_call, sizeof(s_login) - 1);
+        s_login[sizeof(s_login) - 1] = '\0';
+        changed = true;
+    }
+    if (!changed) return;
+
+    ESP_LOGI(TAG, "reconfigure -> %s:%d login=%s", s_host, s_port, s_login);
+
+    /* Break the active recv() by shutting down the socket; the task will
+     * close it and loop back to connect_cluster(). Don't close() here -
+     * the task owns the descriptor. */
+    int sock = s_sock;
+    if (sock >= 0) shutdown(sock, SHUT_RDWR);
+    if (s_kick) xSemaphoreGive(s_kick);
 }
 
 void app_dxcluster_get(app_dx_state_t *out)
