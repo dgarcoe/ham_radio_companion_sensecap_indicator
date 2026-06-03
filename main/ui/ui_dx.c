@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define UI_DX_VISIBLE 15
+#define UI_DX_VISIBLE APP_DX_MAX_SPOTS   /* up to 200 - LVGL handles vertical scrolling */
 
 typedef struct {
     lv_obj_t *row;
@@ -22,6 +22,7 @@ static lv_obj_t *s_status_lbl;
 static lv_obj_t *s_list;
 static lv_obj_t *s_empty_lbl;
 static dx_row_t  s_rows[UI_DX_VISIBLE];
+static int       s_built_rows;        /* rows actually constructed so far */
 static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
 static void build_row(lv_obj_t *parent, dx_row_t *r)
@@ -60,6 +61,16 @@ static void build_row(lv_obj_t *parent, dx_row_t *r)
     lv_obj_set_width(r->info, LV_PCT(100));
 }
 
+/* Build enough rows to display `needed` spots. Existing rows are reused
+ * across refreshes; new ones are appended at the end of s_list. */
+static void ensure_rows_built(int needed)
+{
+    while (s_built_rows < needed && s_built_rows < UI_DX_VISIBLE) {
+        build_row(s_list, &s_rows[s_built_rows]);
+        s_built_rows++;
+    }
+}
+
 static void refresh(const app_dx_state_t *state)
 {
     if (!state) return;
@@ -73,6 +84,7 @@ static void refresh(const app_dx_state_t *state)
     }
 
     int visible = state->count < UI_DX_VISIBLE ? state->count : UI_DX_VISIBLE;
+    ensure_rows_built(visible);
 
     /* Empty-state label visibility */
     if (visible == 0) {
@@ -84,10 +96,9 @@ static void refresh(const app_dx_state_t *state)
         lv_obj_add_flag(s_empty_lbl, LV_OBJ_FLAG_HIDDEN);
     }
 
-    /* Update / show / hide the pre-built rows in place. No allocations
-     * happen here - which is the whole point: rebuilding the subtree
-     * on every spot churned LVGL's draw-descriptor heap to death. */
-    for (int i = 0; i < UI_DX_VISIBLE; i++) {
+    /* Update / show / hide the built rows. Only iterate up to the
+     * number we've actually constructed - the rest don't exist yet. */
+    for (int i = 0; i < s_built_rows; i++) {
         dx_row_t *r = &s_rows[i];
         if (i < visible) {
             int idx = (state->head - i + APP_DX_MAX_SPOTS) % APP_DX_MAX_SPOTS;
@@ -160,7 +171,7 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(s_status_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_status_lbl, &lv_font_montserrat_14, 0);
 
-    /* Scrollable list */
+    /* Scrollable list. Native LVGL touch + scrollbar. */
     s_list = lv_obj_create(scr);
     lv_obj_remove_style_all(s_list);
     lv_obj_set_width(s_list, LV_PCT(100));
@@ -168,6 +179,10 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_gap(s_list, 6, 0);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_bg_color(s_list, UI_COL_ACCENT, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(s_list, LV_OPA_60, LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(s_list, 4, LV_PART_SCROLLBAR);
 
     /* Empty-state placeholder */
     s_empty_lbl = lv_label_create(s_list);
@@ -175,10 +190,10 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(s_empty_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_empty_lbl, &lv_font_montserrat_14, 0);
 
-    /* Pre-built row widgets - reused across refreshes. */
-    for (int i = 0; i < UI_DX_VISIBLE; i++) {
-        build_row(s_list, &s_rows[i]);
-    }
+    /* Rows are built lazily as the spot ring fills. We start with zero
+     * and ensure_rows_built() extends as needed (capped at
+     * UI_DX_VISIBLE). LVGL's native scrolling handles a long list. */
+    s_built_rows = 0;
 
     lv_timer_create(dirty_timer_cb, 1000, NULL);
 

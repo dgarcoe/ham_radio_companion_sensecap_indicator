@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-#define APP_DX_MAX_SPOTS 50
+#define APP_DX_MAX_SPOTS 200
 
 typedef struct {
     char    spotter[16];     /* "W1AW-3" */
