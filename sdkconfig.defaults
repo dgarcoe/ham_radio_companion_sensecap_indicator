@@ -9,6 +9,14 @@ CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Let any allocation 1 KB and larger land in PSRAM. Default threshold
+# is 16 KB which kept LVGL's frequent ~hundreds-of-bytes allocations
+# pegged to internal RAM and made us OOM there. PSRAM is slower but
+# WiFi + LVGL together don't fit comfortably in internal otherwise.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
+
+# Bluetooth: we don't use it. Disabling reclaims ~50 KB of internal RAM.
+CONFIG_BT_ENABLED=n
 
 # Custom partition table (factory + 2 ota + nvs + storage)
 CONFIG_PARTITION_TABLE_CUSTOM=y
