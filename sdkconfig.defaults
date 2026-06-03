@@ -44,5 +44,11 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 
+# Skip LVGL's software anti-aliased mask path. We have no rounded
+# corners / shadows by design - the complex-draw renderer would still
+# walk it for borders + fills and either OOM on the mask alloc or
+# spin in circ_calc_aa4 long enough to trip the task watchdog.
+CONFIG_LV_DRAW_SW_COMPLEX=n
+
 # Compiler
 CONFIG_COMPILER_OPTIMIZATION_PERF=y

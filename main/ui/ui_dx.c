@@ -4,11 +4,16 @@
 #include "app_dxcluster.h"
 #include "bsp.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
+#define UI_DX_VISIBLE 15  /* a busier cluster will push 100+ rows/sec
+                            through; render at most this many. */
+
 static lv_obj_t *s_status_lbl;
 static lv_obj_t *s_list;
+static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
 static void refresh(const app_dx_state_t *state)
 {
@@ -22,7 +27,6 @@ static void refresh(const app_dx_state_t *state)
         lv_obj_set_style_text_color(s_status_lbl, UI_COL_DANGER, 0);
     }
 
-    /* Rebuild the spot list (newest at top). */
     lv_obj_clean(s_list);
 
     if (state->count == 0) {
@@ -36,7 +40,7 @@ static void refresh(const app_dx_state_t *state)
         return;
     }
 
-    for (int i = 0; i < state->count; i++) {
+    for (int i = 0; i < state->count && i < UI_DX_VISIBLE; i++) {
         int idx = (state->head - i + APP_DX_MAX_SPOTS) % APP_DX_MAX_SPOTS;
         const app_dx_spot_t *spot = &state->spots[idx];
 
@@ -70,7 +74,6 @@ static void refresh(const app_dx_state_t *state)
         lv_obj_set_style_text_color(t, UI_COL_MUTED, 0);
         lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
 
-        /* Bottom line: "by SPOTTER  comment" */
         char info[96];
         if (spot->comment[0]) {
             snprintf(info, sizeof(info), "by %s  %s",
@@ -87,14 +90,27 @@ static void refresh(const app_dx_state_t *state)
     }
 }
 
+/* Called from the cluster task on every new spot / connection event.
+ * We just flip a flag and let the LVGL-side timer pick up the latest
+ * state at most once per second - this used to take the LVGL lock and
+ * rebuild the whole list per-spot, which was hammering the renderer
+ * hard enough to trip the task watchdog on busy clusters. */
 void ui_dx_on_update(const app_dx_spot_t *new_spot,
                      const app_dx_state_t *state)
 {
     (void)new_spot;
+    (void)state;
+    atomic_store(&s_dirty, true);
+}
+
+static void dirty_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (!atomic_exchange(&s_dirty, false)) return;
     if (!s_list) return;
-    if (!bsp_lvgl_lock(200)) return;
-    refresh(state);
-    bsp_lvgl_unlock();
+    app_dx_state_t snap;
+    app_dxcluster_get(&snap);
+    refresh(&snap);
 }
 
 lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
@@ -134,6 +150,9 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_gap(s_list, 6, 0);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
+
+    /* Pull current state and rebuild at most once per second. */
+    lv_timer_create(dirty_timer_cb, 1000, NULL);
 
     app_dx_state_t snap;
     app_dxcluster_get(&snap);
