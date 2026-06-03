@@ -247,7 +247,11 @@ esp_err_t app_dxcluster_init(const char *host, int port,
     s_cb = cb;
     s_mutex = xSemaphoreCreateMutex();
     s_kick  = xSemaphoreCreateBinary();
-    if (xTaskCreate(dx_task, "dx", 5120, NULL, 2, NULL) != pdPASS) {
+    /* 8 KB stack: session() carries a 1 KB recv buffer + 512 B line
+     * buffer plus parser locals, and 5 KB was tight enough that a busy
+     * cluster could overflow into the adjacent allocation - which
+     * showed up as a corrupted esp_timer list and an IWDT panic. */
+    if (xTaskCreate(dx_task, "dx", 8 * 1024, NULL, 2, NULL) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;
