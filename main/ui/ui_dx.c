@@ -8,7 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define UI_DX_VISIBLE APP_DX_MAX_SPOTS   /* up to 200 - LVGL handles vertical scrolling */
+/* 8 spots per page is a comfortable density on a 480x480 panel - the
+ * full ring (APP_DX_MAX_SPOTS = 200) is reached via prev/next paging
+ * instead of a long scrollable list, which keeps the LVGL object count
+ * fixed and tiny regardless of how many spots arrive. */
+#define UI_DX_ROWS_PER_PAGE 8
 
 typedef struct {
     lv_obj_t *row;
@@ -21,8 +25,11 @@ typedef struct {
 static lv_obj_t *s_status_lbl;
 static lv_obj_t *s_list;
 static lv_obj_t *s_empty_lbl;
-static dx_row_t  s_rows[UI_DX_VISIBLE];
-static int       s_built_rows;        /* rows actually constructed so far */
+static lv_obj_t *s_page_lbl;
+static lv_obj_t *s_btn_prev_lbl;
+static lv_obj_t *s_btn_next_lbl;
+static dx_row_t  s_rows[UI_DX_ROWS_PER_PAGE];
+static int       s_page;                 /* 0 = newest */
 static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
 static void build_row(lv_obj_t *parent, dx_row_t *r)
@@ -61,16 +68,6 @@ static void build_row(lv_obj_t *parent, dx_row_t *r)
     lv_obj_set_width(r->info, LV_PCT(100));
 }
 
-/* Build enough rows to display `needed` spots. Existing rows are reused
- * across refreshes; new ones are appended at the end of s_list. */
-static void ensure_rows_built(int needed)
-{
-    while (s_built_rows < needed && s_built_rows < UI_DX_VISIBLE) {
-        build_row(s_list, &s_rows[s_built_rows]);
-        s_built_rows++;
-    }
-}
-
 static void refresh(const app_dx_state_t *state)
 {
     if (!state) return;
@@ -83,45 +80,92 @@ static void refresh(const app_dx_state_t *state)
         lv_obj_set_style_text_color(s_status_lbl, UI_COL_DANGER, 0);
     }
 
-    int visible = state->count < UI_DX_VISIBLE ? state->count : UI_DX_VISIBLE;
-    ensure_rows_built(visible);
+    int total = state->count;
+    int max_page = (total + UI_DX_ROWS_PER_PAGE - 1) / UI_DX_ROWS_PER_PAGE - 1;
+    if (max_page < 0) max_page = 0;
+    if (s_page > max_page) s_page = max_page;
+    if (s_page < 0) s_page = 0;
 
-    /* Empty-state label visibility */
-    if (visible == 0) {
+    char page_buf[40];
+    if (total == 0) {
+        snprintf(page_buf, sizeof(page_buf), "—");
+    } else {
+        snprintf(page_buf, sizeof(page_buf), "Page %d/%d  ·  %d spot%s",
+                 s_page + 1, max_page + 1, total, total == 1 ? "" : "s");
+    }
+    lv_label_set_text(s_page_lbl, page_buf);
+
+    /* Dim the prev/next chevrons when at the edges. */
+    lv_obj_set_style_text_color(s_btn_prev_lbl,
+                                s_page > 0 ? UI_COL_ACCENT : UI_COL_MUTED, 0);
+    lv_obj_set_style_text_color(s_btn_next_lbl,
+                                s_page < max_page ? UI_COL_ACCENT : UI_COL_MUTED, 0);
+
+    /* Empty state */
+    if (total == 0) {
         lv_label_set_text(s_empty_lbl,
             state->connected ? "Waiting for spots…"
                              : "Connecting to cluster…");
         lv_obj_remove_flag(s_empty_lbl, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(s_empty_lbl, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    /* Update / show / hide the built rows. Only iterate up to the
-     * number we've actually constructed - the rest don't exist yet. */
-    for (int i = 0; i < s_built_rows; i++) {
-        dx_row_t *r = &s_rows[i];
-        if (i < visible) {
-            int idx = (state->head - i + APP_DX_MAX_SPOTS) % APP_DX_MAX_SPOTS;
-            const app_dx_spot_t *spot = &state->spots[idx];
-
-            lv_label_set_text(r->call, spot->dx_call);
-            lv_label_set_text(r->freq, spot->freq);
-            lv_label_set_text(r->time, spot->time[0] ? spot->time : "");
-
-            char info[96];
-            if (spot->comment[0]) {
-                snprintf(info, sizeof(info), "by %s  %s",
-                         spot->spotter, spot->comment);
-            } else {
-                snprintf(info, sizeof(info), "by %s", spot->spotter);
-            }
-            lv_label_set_text(r->info, info);
-
-            lv_obj_remove_flag(r->row, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(r->row, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < UI_DX_ROWS_PER_PAGE; i++) {
+            lv_obj_add_flag(s_rows[i].row, LV_OBJ_FLAG_HIDDEN);
         }
+        return;
     }
+    lv_obj_add_flag(s_empty_lbl, LV_OBJ_FLAG_HIDDEN);
+
+    int start = s_page * UI_DX_ROWS_PER_PAGE;
+
+    for (int i = 0; i < UI_DX_ROWS_PER_PAGE; i++) {
+        int offset = start + i;
+        if (offset >= total) {
+            lv_obj_add_flag(s_rows[i].row, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        int idx = (state->head - offset + APP_DX_MAX_SPOTS) % APP_DX_MAX_SPOTS;
+        const app_dx_spot_t *spot = &state->spots[idx];
+
+        dx_row_t *r = &s_rows[i];
+        lv_label_set_text(r->call, spot->dx_call);
+        lv_label_set_text(r->freq, spot->freq);
+        lv_label_set_text(r->time, spot->time[0] ? spot->time : "");
+
+        char info[96];
+        if (spot->comment[0]) {
+            snprintf(info, sizeof(info), "by %s  %s",
+                     spot->spotter, spot->comment);
+        } else {
+            snprintf(info, sizeof(info), "by %s", spot->spotter);
+        }
+        lv_label_set_text(r->info, info);
+
+        lv_obj_remove_flag(r->row, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void refresh_now(void)
+{
+    if (!s_list) return;
+    app_dx_state_t snap;
+    app_dxcluster_get(&snap);
+    refresh(&snap);
+}
+
+static void on_prev_clicked(lv_event_t *e)
+{
+    (void)e;
+    if (s_page > 0) {
+        s_page--;
+        refresh_now();
+    }
+}
+
+static void on_next_clicked(lv_event_t *e)
+{
+    (void)e;
+    s_page++;   /* refresh() clamps */
+    refresh_now();
 }
 
 void ui_dx_on_update(const app_dx_spot_t *new_spot,
@@ -136,10 +180,30 @@ static void dirty_timer_cb(lv_timer_t *t)
 {
     (void)t;
     if (!atomic_exchange(&s_dirty, false)) return;
-    if (!s_list) return;
-    app_dx_state_t snap;
-    app_dxcluster_get(&snap);
-    refresh(&snap);
+    refresh_now();
+}
+
+/* Builds a chevron button with a 44 px hit area - matches our touch
+ * target size from the status-bar hamburger. */
+static lv_obj_t *make_chevron(lv_obj_t *parent, const char *symbol,
+                              lv_event_cb_t cb, lv_obj_t **out_lbl)
+{
+    lv_obj_t *btn = lv_obj_create(parent);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_size(btn, 44, 36);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, symbol);
+    lv_obj_set_style_text_color(lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_24, 0);
+
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+    if (out_lbl) *out_lbl = lbl;
+    return btn;
 }
 
 lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
@@ -151,55 +215,62 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_size(scr, LV_PCT(100), LV_PCT(100));
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(scr, 8, 0);
-    lv_obj_set_style_pad_gap(scr, 8, 0);
+    lv_obj_set_style_pad_gap(scr, 6, 0);
 
-    /* Header */
-    lv_obj_t *header = lv_obj_create(scr);
-    lv_obj_remove_style_all(header);
-    lv_obj_set_size(header, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_SPACE_BETWEEN,
+    /* Title row: DX SPOTS  /  ONLINE indicator */
+    lv_obj_t *title_row = lv_obj_create(scr);
+    lv_obj_remove_style_all(title_row);
+    lv_obj_set_size(title_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(title_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(title_row, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *hdr_lbl = lv_label_create(header);
-    lv_label_set_text(hdr_lbl, "DX SPOTS");
-    lv_obj_set_style_text_color(hdr_lbl, UI_COL_MUTED, 0);
-    lv_obj_set_style_text_font(hdr_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_t *title = lv_label_create(title_row);
+    lv_label_set_text(title, "DX SPOTS");
+    lv_obj_set_style_text_color(title, UI_COL_MUTED, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
 
-    s_status_lbl = lv_label_create(header);
+    s_status_lbl = lv_label_create(title_row);
     lv_label_set_text(s_status_lbl, "CONNECTING…");
     lv_obj_set_style_text_color(s_status_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_status_lbl, &lv_font_montserrat_14, 0);
 
-    /* Scrollable list. Native LVGL touch + scrollbar. */
+    /* Pager row: [<]   Page X/Y · Z spots   [>] */
+    lv_obj_t *pager = lv_obj_create(scr);
+    lv_obj_remove_style_all(pager);
+    lv_obj_set_size(pager, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(pager, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(pager, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    make_chevron(pager, LV_SYMBOL_LEFT,  on_prev_clicked, &s_btn_prev_lbl);
+
+    s_page_lbl = lv_label_create(pager);
+    lv_label_set_text(s_page_lbl, "—");
+    lv_obj_set_style_text_color(s_page_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(s_page_lbl, &lv_font_montserrat_14, 0);
+
+    make_chevron(pager, LV_SYMBOL_RIGHT, on_next_clicked, &s_btn_next_lbl);
+
+    /* List of rows for the current page */
     s_list = lv_obj_create(scr);
     lv_obj_remove_style_all(s_list);
     lv_obj_set_width(s_list, LV_PCT(100));
     lv_obj_set_flex_grow(s_list, 1);
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_gap(s_list, 6, 0);
-    lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_style_bg_color(s_list, UI_COL_ACCENT, LV_PART_SCROLLBAR);
-    lv_obj_set_style_bg_opa(s_list, LV_OPA_60, LV_PART_SCROLLBAR);
-    lv_obj_set_style_width(s_list, 4, LV_PART_SCROLLBAR);
 
-    /* Empty-state placeholder */
     s_empty_lbl = lv_label_create(s_list);
     lv_label_set_text(s_empty_lbl, "Connecting to cluster…");
     lv_obj_set_style_text_color(s_empty_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_empty_lbl, &lv_font_montserrat_14, 0);
 
-    /* Rows are built lazily as the spot ring fills. We start with zero
-     * and ensure_rows_built() extends as needed (capped at
-     * UI_DX_VISIBLE). LVGL's native scrolling handles a long list. */
-    s_built_rows = 0;
+    for (int i = 0; i < UI_DX_ROWS_PER_PAGE; i++) {
+        build_row(s_list, &s_rows[i]);
+    }
 
     lv_timer_create(dirty_timer_cb, 1000, NULL);
-
-    app_dx_state_t snap;
-    app_dxcluster_get(&snap);
-    refresh(&snap);
+    refresh_now();
 
     return scr;
 }
