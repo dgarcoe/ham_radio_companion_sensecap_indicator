@@ -106,6 +106,18 @@ static void time_watch_task(void *arg)
     }
 }
 
+static void ui_init_task(void *arg)
+{
+    SemaphoreHandle_t done = (SemaphoreHandle_t)arg;
+    if (bsp_lvgl_lock(-1)) {
+        ui_init(&s_cfg);
+        ui_settings_set_saved_cb(on_settings_saved);
+        bsp_lvgl_unlock();
+    }
+    xSemaphoreGive(done);
+    vTaskDelete(NULL);
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(app_nvs_init());
@@ -113,11 +125,15 @@ void app_main(void)
 
     ESP_ERROR_CHECK(bsp_display_start());
 
-    if (bsp_lvgl_lock(-1)) {
-        ui_init(&s_cfg);
-        ui_settings_set_saved_cb(on_settings_saved);
-        bsp_lvgl_unlock();
-    }
+    /* Build the whole UI tree on a dedicated 24 KB stack: this is a
+     * one-shot, deep recursive cascade (lv_obj_create + style cascade
+     * + flex layout, per screen, x many screens) and was overflowing
+     * the main task stack even when bumped via Kconfig - and any
+     * out-of-date sdkconfig would silently keep the old smaller value. */
+    SemaphoreHandle_t ui_done = xSemaphoreCreateBinary();
+    xTaskCreate(ui_init_task, "ui_init", 24 * 1024, ui_done, 5, NULL);
+    xSemaphoreTake(ui_done, portMAX_DELAY);
+    vSemaphoreDelete(ui_done);
 
     ESP_ERROR_CHECK(app_wifi_init(on_wifi_state));
     ESP_ERROR_CHECK(app_wifi_start(&s_cfg));
