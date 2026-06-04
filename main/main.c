@@ -1,5 +1,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -120,6 +121,13 @@ static void ui_init_task(void *arg)
 
 void app_main(void)
 {
+    /* Kill the task watchdog at runtime - sdkconfig.defaults options
+     * don't help if the user's sdkconfig is stale, and the
+     * 'esp_task_wdt_reset(707): task not found' flood was making Core 1
+     * spin in UART output forever (holding the FreeRTOS scheduler
+     * spinlock) while Core 0 timed out in vPortEnterCritical. */
+    esp_task_wdt_deinit();
+
     ESP_ERROR_CHECK(app_nvs_init());
     ESP_ERROR_CHECK(app_nvs_load(&s_cfg));
 
