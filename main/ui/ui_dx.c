@@ -32,6 +32,14 @@ static dx_row_t  s_rows[UI_DX_ROWS_PER_PAGE];
 static int       s_page;                 /* 0 = newest */
 static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
+/* Snapshot buffer for refresh_now() - lives in .bss because
+ * app_dx_state_t is ~5 KB and the LVGL task only has 8 KB of stack;
+ * a stack-resident snap plus the 15-deep label-set / mark-dirty /
+ * event-send / spinlock chain was overflowing into the adjacent
+ * FreeRTOS event-group memory, scribbling its spinlock owner field
+ * and causing the CAS to spin forever (IWDT panic). */
+static app_dx_state_t s_snap_buf;
+
 static void build_row(lv_obj_t *parent, dx_row_t *r)
 {
     r->row = lv_obj_create(parent);
@@ -147,9 +155,11 @@ static void refresh(const app_dx_state_t *state)
 static void refresh_now(void)
 {
     if (!s_list) return;
-    app_dx_state_t snap;
-    app_dxcluster_get(&snap);
-    refresh(&snap);
+    /* All callers (timer + chevron click handlers) run on the LVGL
+     * task, so there's only ever one in flight at a time - s_snap_buf
+     * has a single user and doesn't need synchronisation. */
+    app_dxcluster_get(&s_snap_buf);
+    refresh(&s_snap_buf);
 }
 
 static void on_prev_clicked(lv_event_t *e)
