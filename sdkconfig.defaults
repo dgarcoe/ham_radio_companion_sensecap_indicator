@@ -45,9 +45,12 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 CONFIG_LCD_BOARD_SENSECAP_INDICATOR_D1L=y
 CONFIG_SENSECAP_INDICATOR_SCREEN_GX=y
 
-# LVGL: use PSRAM for buffers
-CONFIG_LV_MEM_CUSTOM=y
-CONFIG_LV_MEM_SIZE_KILOBYTES=48
+# LVGL: route all internal allocations to PSRAM via main/lv_psram_alloc.c.
+# Internal RAM is ~150 KB after WiFi/LWIP/FreeRTOS and a single screen of
+# LVGL widgets can exhaust it. With CUSTOM_MALLOC, LVGL calls our
+# wrappers around heap_caps_malloc(MALLOC_CAP_SPIRAM) for every alloc.
+CONFIG_LV_USE_STDLIB_MALLOC=y
+CONFIG_LV_USE_CUSTOM_MALLOC=y
 CONFIG_LV_COLOR_DEPTH_16=y
 
 # LVGL fonts used by the UI (watch + status bar + settings)
