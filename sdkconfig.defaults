@@ -47,6 +47,13 @@ CONFIG_LWIP_LOCAL_HOSTNAME="hamcompanion"
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 
+# Route mbedTLS allocations to PSRAM. The SSL context + handshake state
+# can't fit in internal RAM once WiFi/LWIP/LVGL/feature tasks are up,
+# and mbedtls_ssl_setup() was failing with -0x7F00 (ALLOC_FAILED).
+# This is the *only* mbedtls knob we touch - record buffer sizes stay
+# at defaults so the handshake itself is unchanged.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
 # SenseCAP Indicator D1L panel selection (BSP)
 CONFIG_LCD_BOARD_SENSECAP_INDICATOR_D1L=y
 CONFIG_SENSECAP_INDICATOR_SCREEN_GX=y

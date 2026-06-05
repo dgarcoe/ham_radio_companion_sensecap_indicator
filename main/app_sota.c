@@ -13,6 +13,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 
 #include "cJSON.h"
@@ -221,7 +222,9 @@ esp_err_t app_sota_init(app_sota_cb_t cb)
     s_cb = cb;
     s_mutex = xSemaphoreCreateMutex();
     s_poke  = xSemaphoreCreateBinary();
-    if (xTaskCreate(sota_task, "sota", 8 * 1024, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreatePinnedToCoreWithCaps(sota_task, "sota", 8 * 1024, NULL, 2,
+                                        NULL, tskNO_AFFINITY,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;

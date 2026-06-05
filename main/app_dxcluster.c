@@ -10,7 +10,9 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
+#include "esp_heap_caps.h"
 
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -258,7 +260,9 @@ esp_err_t app_dxcluster_init(const char *host, int port,
      * buffer plus parser locals, and 5 KB was tight enough that a busy
      * cluster could overflow into the adjacent allocation - which
      * showed up as a corrupted esp_timer list and an IWDT panic. */
-    if (xTaskCreate(dx_task, "dx", 8 * 1024, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreatePinnedToCoreWithCaps(dx_task, "dx", 8 * 1024, NULL, 2,
+                                        NULL, tskNO_AFFINITY,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;

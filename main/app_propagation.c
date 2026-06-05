@@ -10,6 +10,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 
 static const char *TAG = "prop";
@@ -240,7 +241,9 @@ esp_err_t app_propagation_init(app_prop_cb_t on_update)
     s_cb = on_update;
     s_mutex = xSemaphoreCreateMutex();
     s_poke  = xSemaphoreCreateBinary();
-    if (xTaskCreate(fetch_task, "prop", 6144, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreatePinnedToCoreWithCaps(fetch_task, "prop", 6144, NULL, 2,
+                                        NULL, tskNO_AFFINITY,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;
