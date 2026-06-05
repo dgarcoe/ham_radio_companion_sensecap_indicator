@@ -110,30 +110,35 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
     if (st == APP_WIFI_AP_PORTAL) {
         app_portal_start(&s_cfg, on_portal_saved);
     } else if (st == APP_WIFI_CONNECTED) {
+        /* Each feature init is best-effort: if a task stack alloc or
+         * socket open fails, log and keep going. A single feature OOM
+         * should never reboot the device via ESP_ERROR_CHECK. */
         if (!s_prop_started) {
-            ESP_ERROR_CHECK(app_propagation_init(ui_propagation_on_update));
-            s_prop_started = true;
+            esp_err_t e = app_propagation_init(ui_propagation_on_update);
+            if (e == ESP_OK) s_prop_started = true;
+            else ESP_LOGE(TAG, "propagation init failed: %s", esp_err_to_name(e));
         } else {
             app_propagation_request_refresh();
         }
         /* DX cluster needs a callsign to log in. Skip cleanly if missing. */
         if (!s_dx_started && s_cfg.callsign[0] && s_cfg.dx_host[0]) {
-            ESP_ERROR_CHECK(app_dxcluster_init(s_cfg.dx_host, s_cfg.dx_port,
-                                               s_cfg.callsign,
-                                               ui_dx_on_update));
-            s_dx_started = true;
+            esp_err_t e = app_dxcluster_init(s_cfg.dx_host, s_cfg.dx_port,
+                                             s_cfg.callsign,
+                                             ui_dx_on_update);
+            if (e == ESP_OK) s_dx_started = true;
+            else ESP_LOGE(TAG, "dxcluster init failed: %s", esp_err_to_name(e));
         }
-        /* POTA: pure HTTP fetch, no auth needed. */
         if (!s_pota_started) {
-            ESP_ERROR_CHECK(app_pota_init(ui_pota_on_update));
-            s_pota_started = true;
+            esp_err_t e = app_pota_init(ui_pota_on_update);
+            if (e == ESP_OK) s_pota_started = true;
+            else ESP_LOGE(TAG, "pota init failed: %s", esp_err_to_name(e));
         } else {
             app_pota_request_refresh();
         }
-        /* SOTA: same shape as POTA. */
         if (!s_sota_started) {
-            ESP_ERROR_CHECK(app_sota_init(ui_sota_on_update));
-            s_sota_started = true;
+            esp_err_t e = app_sota_init(ui_sota_on_update);
+            if (e == ESP_OK) s_sota_started = true;
+            else ESP_LOGE(TAG, "sota init failed: %s", esp_err_to_name(e));
         } else {
             app_sota_request_refresh();
         }

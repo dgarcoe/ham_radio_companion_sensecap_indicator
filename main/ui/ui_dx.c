@@ -3,6 +3,7 @@
 #include "ui_theme.h"
 #include "app_dxcluster.h"
 #include "bsp.h"
+#include "esp_attr.h"
 
 #include <stdatomic.h>
 #include <ctype.h>
@@ -207,7 +208,7 @@ static int s_filter_band;
 static int s_filter_mode;
 static int s_filter_area;
 
-static app_dx_state_t s_snap_buf;
+EXT_RAM_BSS_ATTR static app_dx_state_t s_snap_buf;
 static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
 /* --- Filter helpers --- */

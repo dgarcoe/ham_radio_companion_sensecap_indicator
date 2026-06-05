@@ -6,6 +6,7 @@
 #include <errno.h>
 
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,13 +24,13 @@ static app_dx_cb_t       s_cb;
 static SemaphoreHandle_t s_mutex;
 static SemaphoreHandle_t s_kick;     /* poked to break reconnect-sleep */
 static volatile int      s_sock = -1; /* current socket, -1 when idle */
-static app_dx_state_t    s_state;
+EXT_RAM_BSS_ATTR static app_dx_state_t    s_state;
 /* Snapshot we hand to the UI callback. Lives in .bss instead of the dx
  * task stack - it's ~5 KB, and stacking a copy per callback used to
  * push session()->set_connected()->cb()->LVGL lock over the dx task
  * stack and corrupt nearby FreeRTOS list nodes. Single writer (dx_task)
  * + synchronous callback = no concurrent access. */
-static app_dx_state_t    s_snap;
+EXT_RAM_BSS_ATTR static app_dx_state_t    s_snap;
 
 /* --- Spot line parser ---
  *

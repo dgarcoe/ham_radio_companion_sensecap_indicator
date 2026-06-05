@@ -10,6 +10,12 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
+# Place big static buffers tagged EXT_RAM_BSS_ATTR in PSRAM .bss so each
+# new spot-screen (DX, POTA, SOTA, ...) doesn't burn ~50 KB of internal
+# DRAM on its 100-entry spot ring + UI snapshot. Without this, xTaskCreate
+# eventually fails to find 8 KB for the next task's stack.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
 # Bluetooth: we don't use it. Disabling reclaims ~50 KB of internal RAM.
 CONFIG_BT_ENABLED=n
 

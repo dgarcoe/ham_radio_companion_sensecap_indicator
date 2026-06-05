@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
@@ -24,8 +25,9 @@ static const char *URL = "https://api2.sota.org.uk/api/spots/50/all";
 #define REFRESH_INTERVAL_MS  (90 * 1000)
 #define RETRY_INTERVAL_MS    (30 * 1000)
 
-static app_sota_state_t  s_state;
-static app_sota_state_t  s_snap;
+/* ~16 KB each - keep in PSRAM .bss, internal DRAM is for WiFi/stacks. */
+EXT_RAM_BSS_ATTR static app_sota_state_t  s_state;
+EXT_RAM_BSS_ATTR static app_sota_state_t  s_snap;
 static SemaphoreHandle_t s_mutex;
 static SemaphoreHandle_t s_poke;
 static app_sota_cb_t     s_cb;
