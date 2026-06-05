@@ -215,7 +215,7 @@ static void refresh(const app_dx_state_t *state)
     if (s_page > max_page) s_page = max_page;
     if (s_page < 0) s_page = 0;
 
-    char page_buf[48];
+    char page_buf[64];
     if (total == 0) {
         snprintf(page_buf, sizeof(page_buf), "—");
     } else {
