@@ -1,15 +1,12 @@
-/* PSRAM-backed allocator implementation for LVGL.
+/* PSRAM-backed allocator for LVGL.
  *
- * LVGL's default allocator (builtin tlsf or libc malloc) puts every
- * widget tree, label text, draw descriptor and style buffer in internal
- * RAM. On the SenseCAP D1L that's ~150 KB after WiFi/LWIP/FreeRTOS, and
- * a single screen of LVGL panels was enough to OOM.
- *
- * With LV_USE_CUSTOM_MALLOC = y, LVGL calls these wrappers instead.
- * We route to heap_caps_malloc(MALLOC_CAP_SPIRAM) - 8 MB of slower-
- * but-plentiful PSRAM. Internal RAM stays reserved for things that
- * genuinely need it (DMA buffers, FreeRTOS objects, ISR contexts).
- */
+ * With CONFIG_LV_USE_CUSTOM_MALLOC=y, LVGL pulls these symbols from
+ * the application instead of providing them itself. We route every
+ * allocation to heap_caps_malloc(MALLOC_CAP_SPIRAM) so widget trees,
+ * draw descriptors, label text and style buffers live in the 8 MB of
+ * PSRAM rather than the ~150 KB of internal RAM that WiFi/LWIP/
+ * FreeRTOS share. Signatures match LVGL 9.1.0
+ * src/stdlib/clib/lv_mem_core_clib.c (the reference implementation). */
 
 #include <string.h>
 #include "esp_heap_caps.h"
@@ -17,14 +14,31 @@
 
 #define LVGL_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 
+void lv_mem_init(void)
+{
+    /* Nothing to init - heap_caps_malloc backs us. */
+}
+
+void lv_mem_deinit(void)
+{
+    /* Nothing to deinit. */
+}
+
+lv_mem_pool_t lv_mem_add_pool(void *mem, size_t bytes)
+{
+    (void)mem;
+    (void)bytes;
+    return NULL;
+}
+
+void lv_mem_remove_pool(lv_mem_pool_t pool)
+{
+    (void)pool;
+}
+
 void *lv_malloc_core(size_t size)
 {
     return heap_caps_malloc(size, LVGL_CAPS);
-}
-
-void lv_free_core(void *p)
-{
-    heap_caps_free(p);
 }
 
 void *lv_realloc_core(void *p, size_t new_size)
@@ -32,13 +46,20 @@ void *lv_realloc_core(void *p, size_t new_size)
     return heap_caps_realloc(p, new_size, LVGL_CAPS);
 }
 
-void lv_mem_init_core(void)   {}
-void lv_mem_deinit_core(void) {}
-
-void lv_mem_monitor_core(lv_mem_monitor_t *mon)
+void lv_free_core(void *p)
 {
-    /* The system heap doesn't expose tlsf-style fragmentation stats,
-     * so just return zeroes. LVGL's diagnostics will look empty, which
-     * is fine - we're not relying on its internal mem monitor. */
-    if (mon) memset(mon, 0, sizeof(*mon));
+    heap_caps_free(p);
+}
+
+void lv_mem_monitor_core(lv_mem_monitor_t *mon_p)
+{
+    /* heap_caps_get_info exposes far more than lv_mem_monitor_t wants
+     * and the fields don't map cleanly, so just zero it - LVGL only
+     * uses these stats for its own debug print. */
+    if (mon_p) memset(mon_p, 0, sizeof(*mon_p));
+}
+
+lv_result_t lv_mem_test_core(void)
+{
+    return LV_RESULT_OK;
 }
