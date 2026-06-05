@@ -10,13 +10,18 @@
 
 #include <string.h>
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "lvgl.h"
+
+static const char *TAG = "lv_psram";
 
 #define LVGL_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 
 void lv_mem_init(void)
 {
-    /* Nothing to init - heap_caps_malloc backs us. */
+    /* Log so we can confirm this allocator is actually linked + called
+     * (it was silently missing once due to a stale build/ folder). */
+    ESP_LOGI(TAG, "LVGL allocator: PSRAM via heap_caps_malloc");
 }
 
 void lv_mem_deinit(void)
