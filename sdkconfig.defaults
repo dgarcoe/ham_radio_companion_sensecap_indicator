@@ -41,6 +41,16 @@ CONFIG_LWIP_LOCAL_HOSTNAME="hamcompanion"
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 
+# mbedTLS dynamic buffers: the default config keeps a ~16 KB in + 16 KB
+# out record buffer per TLS context for the whole session lifetime. With
+# propagation (hamqsl) + POTA (api.pota.app) both holding sessions, the
+# second mbedtls_ssl_setup() was failing with -0x7F00 (ALLOC_FAILED) in
+# internal RAM. Dynamic mode allocates the records only while data is
+# in flight and frees the peer cert / config after handshake.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+
 # SenseCAP Indicator D1L panel selection (BSP)
 CONFIG_LCD_BOARD_SENSECAP_INDICATOR_D1L=y
 CONFIG_SENSECAP_INDICATOR_SCREEN_GX=y
