@@ -8,7 +8,6 @@ idf_component_register(
         "app_propagation.c"
         "app_dxcluster.c"
         "bsp.c"
-        "lv_psram_alloc.c"
         "ui/ui.c"
         "ui/ui_watch.c"
         "ui/ui_menu.c"

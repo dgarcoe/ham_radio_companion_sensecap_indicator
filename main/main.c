@@ -1,8 +1,11 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lvgl.h"
+#include <string.h>
 
 #include "app_nvs.h"
 #include "app_wifi.h"
@@ -15,6 +18,32 @@
 #include "ui/ui_internal.h"
 
 static const char *TAG = "main";
+
+/* --- LVGL custom allocator -------------------------------------------
+ *
+ * CONFIG_LV_USE_CUSTOM_MALLOC=y removes LVGL's built-in lv_mem_init /
+ * lv_malloc_core / etc. from its own build, expecting these symbols
+ * to come from application code. Living here (in main.c, always
+ * compiled) is the simplest way to guarantee they're linked - putting
+ * them in a separate .c file requires the file to be in
+ * main/CMakeLists.txt SRCS and we kept missing that.
+ *
+ * Effect: every LVGL allocation goes to PSRAM via heap_caps_malloc,
+ * keeping internal RAM available for WiFi/LWIP/FreeRTOS.
+ */
+#define LVGL_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+
+void lv_mem_init(void)        { ESP_LOGI(TAG, "LVGL allocator: PSRAM via heap_caps_malloc"); }
+void lv_mem_deinit(void)      { }
+void *lv_malloc_core(size_t size)               { return heap_caps_malloc(size,        LVGL_CAPS); }
+void *lv_realloc_core(void *p, size_t new_size) { return heap_caps_realloc(p, new_size, LVGL_CAPS); }
+void  lv_free_core(void *p)                     { heap_caps_free(p); }
+lv_mem_pool_t lv_mem_add_pool(void *mem, size_t bytes) { (void)mem; (void)bytes; return NULL; }
+void lv_mem_remove_pool(lv_mem_pool_t pool)            { (void)pool; }
+void lv_mem_monitor_core(lv_mem_monitor_t *mon_p)      { if (mon_p) memset(mon_p, 0, sizeof(*mon_p)); }
+lv_result_t lv_mem_test_core(void)                     { return LV_RESULT_OK; }
+
+/* ----------------------------------------------------------------------- */
 
 static app_config_t s_cfg;
 static esp_timer_handle_t s_reconfig_timer;
