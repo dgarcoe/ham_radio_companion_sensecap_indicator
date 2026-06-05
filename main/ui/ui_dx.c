@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define UI_DX_ROWS_PER_PAGE 8
+#define UI_DX_ROWS_PER_PAGE 6
 
 typedef struct {
     lv_obj_t *row;
@@ -299,8 +299,10 @@ static void build_row(lv_obj_t *parent, dx_row_t *r)
     ui_theme_style_panel(r->row);
     lv_obj_set_size(r->row, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(r->row, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(r->row, 8, 0);
-    lv_obj_set_style_pad_gap(r->row, 2, 0);
+    /* Tight padding so 6 rows fit comfortably in the list area. */
+    lv_obj_set_style_pad_hor(r->row, 8, 0);
+    lv_obj_set_style_pad_ver(r->row, 4, 0);
+    lv_obj_set_style_pad_gap(r->row, 1, 0);
     lv_obj_add_flag(r->row, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(r->row, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -314,11 +316,11 @@ static void build_row(lv_obj_t *parent, dx_row_t *r)
 
     r->call = lv_label_create(top);
     lv_obj_set_style_text_color(r->call, UI_COL_ACCENT, 0);
-    lv_obj_set_style_text_font(r->call, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(r->call, &lv_font_montserrat_18, 0);
 
     r->freq = lv_label_create(top);
     lv_obj_set_style_text_color(r->freq, UI_COL_TEXT, 0);
-    lv_obj_set_style_text_font(r->freq, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(r->freq, &lv_font_montserrat_14, 0);
 
     r->time = lv_label_create(top);
     lv_obj_set_style_text_color(r->time, UI_COL_MUTED, 0);
@@ -484,66 +486,79 @@ static lv_obj_t *make_chevron(lv_obj_t *parent, const char *symbol,
     return btn;
 }
 
-/* Filter chip: vertical stack of header / up button / value / down button.
- * Tapping ▲ goes to the previous filter value, ▼ to the next. */
+/* Filter chip: compact horizontal pill with left/right arrows around the
+ * current value. Tapping [<] cycles to the previous value, [>] to the
+ * next. Single row (~30 px tall) so the spot list keeps the lion's share
+ * of vertical space. */
 static void make_filter_chip(lv_obj_t *parent, const char *header,
-                             lv_event_cb_t on_up, lv_event_cb_t on_down,
+                             lv_event_cb_t on_prev, lv_event_cb_t on_next,
                              lv_obj_t **out_value_lbl)
 {
     lv_obj_t *chip = lv_obj_create(parent);
     lv_obj_remove_style_all(chip);
-    lv_obj_set_size(chip, 110, LV_SIZE_CONTENT);
+    lv_obj_set_size(chip, 142, 30);
     lv_obj_set_style_bg_color(chip, UI_COL_PANEL, 0);
     lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(chip, UI_COL_BORDER, 0);
     lv_obj_set_style_border_width(chip, 1, 0);
-    lv_obj_set_style_pad_all(chip, 4, 0);
-    lv_obj_set_style_pad_gap(chip, 2, 0);
-    lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER,
+    lv_obj_set_style_pad_hor(chip, 6, 0);
+    lv_obj_set_style_pad_ver(chip, 0, 0);
+    lv_obj_set_style_pad_gap(chip, 4, 0);
+    lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(chip, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *h = lv_label_create(chip);
+    /* Left arrow (prev) - generous hit-area despite the small chip. */
+    lv_obj_t *prev = lv_obj_create(chip);
+    lv_obj_remove_style_all(prev);
+    lv_obj_set_size(prev, 24, 28);
+    lv_obj_add_flag(prev, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(prev, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(prev, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(prev, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *prev_lbl = lv_label_create(prev);
+    lv_label_set_text(prev_lbl, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_color(prev_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(prev_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_add_event_cb(prev, on_prev, LV_EVENT_CLICKED, NULL);
+
+    /* Header + value stacked into a single inline string keeps the chip
+     * compact; e.g. "Band  ALL". */
+    lv_obj_t *mid = lv_obj_create(chip);
+    lv_obj_remove_style_all(mid);
+    lv_obj_set_size(mid, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(mid, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(mid, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(mid, 6, 0);
+    lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *h = lv_label_create(mid);
     lv_label_set_text(h, header);
     lv_obj_set_style_text_color(h, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(h, &lv_font_montserrat_14, 0);
 
-    /* Up button */
-    lv_obj_t *up = lv_obj_create(chip);
-    lv_obj_remove_style_all(up);
-    lv_obj_set_size(up, LV_PCT(100), 24);
-    lv_obj_add_flag(up, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(up, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(up, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(up, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_t *up_lbl = lv_label_create(up);
-    lv_label_set_text(up_lbl, LV_SYMBOL_UP);
-    lv_obj_set_style_text_color(up_lbl, UI_COL_ACCENT, 0);
-    lv_obj_set_style_text_font(up_lbl, &lv_font_montserrat_18, 0);
-    lv_obj_add_event_cb(up, on_up, LV_EVENT_CLICKED, NULL);
-
-    /* Value */
-    lv_obj_t *v = lv_label_create(chip);
+    lv_obj_t *v = lv_label_create(mid);
     lv_label_set_text(v, "ALL");
     lv_obj_set_style_text_color(v, UI_COL_TEXT, 0);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
 
-    /* Down button */
-    lv_obj_t *dn = lv_obj_create(chip);
-    lv_obj_remove_style_all(dn);
-    lv_obj_set_size(dn, LV_PCT(100), 24);
-    lv_obj_add_flag(dn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(dn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(dn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(dn, LV_FLEX_ALIGN_CENTER,
+    /* Right arrow (next) */
+    lv_obj_t *next = lv_obj_create(chip);
+    lv_obj_remove_style_all(next);
+    lv_obj_set_size(next, 24, 28);
+    lv_obj_add_flag(next, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(next, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(next, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(next, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_t *dn_lbl = lv_label_create(dn);
-    lv_label_set_text(dn_lbl, LV_SYMBOL_DOWN);
-    lv_obj_set_style_text_color(dn_lbl, UI_COL_ACCENT, 0);
-    lv_obj_set_style_text_font(dn_lbl, &lv_font_montserrat_18, 0);
-    lv_obj_add_event_cb(dn, on_down, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *next_lbl = lv_label_create(next);
+    lv_label_set_text(next_lbl, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(next_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(next_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_add_event_cb(next, on_next, LV_EVENT_CLICKED, NULL);
 
     if (out_value_lbl) *out_value_lbl = v;
 }
