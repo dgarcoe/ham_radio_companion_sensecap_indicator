@@ -41,20 +41,12 @@ CONFIG_LWIP_LOCAL_HOSTNAME="hamcompanion"
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 
-# mbedTLS memory: route every mbedtls allocation to PSRAM. The SSL
-# context + handshake state + cert chain easily exceed what's free in
-# internal RAM once WiFi/LWIP/LVGL are running, and mbedtls_ssl_setup()
-# was failing with -0x7F00 (ALLOC_FAILED). PSRAM is fine here - no DMA
-# is involved in TLS state.
-CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
-
-# Shrink TLS record buffers: the endpoints we hit (hamqsl XML, POTA JSON)
-# fit in a few KB; the default 16 KB in + 16 KB out is wasteful.
-CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=8192
-CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
-
-# Free the peer cert + config blob after the handshake completes.
+# mbedTLS dynamic buffers: the default config keeps a ~16 KB in + 16 KB
+# out record buffer per TLS context for the whole session lifetime. With
+# propagation (hamqsl) + POTA (api.pota.app) both holding sessions, the
+# second mbedtls_ssl_setup() was failing with -0x7F00 (ALLOC_FAILED) in
+# internal RAM. Dynamic mode allocates the records only while data is
+# in flight and frees the peer cert / config after handshake.
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
