@@ -19,7 +19,7 @@
 static const char *TAG = "pota";
 static const char *URL = "https://api.pota.app/spot/activator";
 
-#define BUF_SIZE             (32 * 1024)   /* response is typically 8-20 KB */
+#define BUF_SIZE             (96 * 1024)   /* api.pota.app feed has grown past 32 KB; buffer lives in PSRAM */
 #define REFRESH_INTERVAL_MS  (60 * 1000)
 #define RETRY_INTERVAL_MS    (30 * 1000)
 
