@@ -249,15 +249,49 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(s_lbl_geomag, UI_COL_TEXT, 0);
     ESP_LOGI(TAG, "info panel built");
 
-    /* HF section: single column of rows for now, day/night marked in name */
+    /* HF section: two columns side-by-side, DAY on left, NIGHT on right.
+     * Each column has a coloured header and HF_ROWS_PER_COL pre-built
+     * (hidden) row widgets that refresh() populates in place. */
     lv_obj_t *hf_hdr = lv_label_create(scr);
     lv_label_set_text(hf_hdr, "HF BANDS");
     lv_obj_set_style_text_color(hf_hdr, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(hf_hdr, &lv_font_montserrat_14, 0);
 
+    lv_obj_t *hf_grid = lv_obj_create(scr);
+    lv_obj_remove_style_all(hf_grid);
+    lv_obj_set_width(hf_grid, LV_PCT(100));
+    lv_obj_set_height(hf_grid, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(hf_grid, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hf_grid, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_gap(hf_grid, 8, 0);
+
+    lv_obj_t *day_col = lv_obj_create(hf_grid);
+    lv_obj_remove_style_all(day_col);
+    lv_obj_set_flex_grow(day_col, 1);
+    lv_obj_set_height(day_col, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(day_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(day_col, 6, 0);
+    lv_obj_t *day_hdr = lv_label_create(day_col);
+    lv_label_set_text(day_hdr, "DAY");
+    lv_obj_set_style_text_color(day_hdr, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(day_hdr, &lv_font_montserrat_14, 0);
     for (int i = 0; i < HF_ROWS_PER_COL; i++) {
-        build_row(scr, &s_hf_day[i], false);
-        build_row(scr, &s_hf_night[i], false);
+        build_row(day_col, &s_hf_day[i], false);
+    }
+
+    lv_obj_t *night_col = lv_obj_create(hf_grid);
+    lv_obj_remove_style_all(night_col);
+    lv_obj_set_flex_grow(night_col, 1);
+    lv_obj_set_height(night_col, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(night_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(night_col, 6, 0);
+    lv_obj_t *night_hdr = lv_label_create(night_col);
+    lv_label_set_text(night_hdr, "NIGHT");
+    lv_obj_set_style_text_color(night_hdr, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(night_hdr, &lv_font_montserrat_14, 0);
+    for (int i = 0; i < HF_ROWS_PER_COL; i++) {
+        build_row(night_col, &s_hf_night[i], false);
     }
     ESP_LOGI(TAG, "HF rows built");
 
