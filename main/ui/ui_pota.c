@@ -192,9 +192,9 @@ static void refresh(const app_pota_state_t *state)
 
     char page_buf[64];
     if (total == 0) {
-        snprintf(page_buf, sizeof(page_buf), "—");
+        snprintf(page_buf, sizeof(page_buf), "-");
     } else {
-        snprintf(page_buf, sizeof(page_buf), "Page %d/%d  ·  %d spot%s",
+        snprintf(page_buf, sizeof(page_buf), "Page %d/%d  |  %d spot%s",
                  s_page + 1, max_page + 1, total, total == 1 ? "" : "s");
     }
     lv_label_set_text(s_page_lbl, page_buf);
@@ -208,7 +208,7 @@ static void refresh(const app_pota_state_t *state)
         const char *msg = state->connected
             ? (state->count == 0 ? "No active POTA spots"
                                  : "No spots match the current filter")
-            : "Fetching from pota.app…";
+            : "Fetching from pota.app...";
         lv_label_set_text(s_empty_lbl, msg);
         lv_obj_remove_flag(s_empty_lbl, LV_OBJ_FLAG_HIDDEN);
         for (int i = 0; i < UI_POTA_ROWS_PER_PAGE; i++) {
@@ -237,10 +237,10 @@ static void refresh(const app_pota_state_t *state)
         char park[96];
         const char *mode = sp->mode[0] ? sp->mode : "?";
         if (sp->park_name[0]) {
-            snprintf(park, sizeof(park), "%s · %s · %s",
+            snprintf(park, sizeof(park), "%s | %s | %s",
                      sp->park_ref, sp->park_name, mode);
         } else if (sp->park_ref[0]) {
-            snprintf(park, sizeof(park), "%s · %s", sp->park_ref, mode);
+            snprintf(park, sizeof(park), "%s | %s", sp->park_ref, mode);
         } else {
             snprintf(park, sizeof(park), "%s", mode);
         }
@@ -407,7 +407,7 @@ lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
 
     s_status_lbl = lv_label_create(title_row);
-    lv_label_set_text(s_status_lbl, "CONNECTING…");
+    lv_label_set_text(s_status_lbl, "CONNECTING...");
     lv_obj_set_style_text_color(s_status_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_status_lbl, &lv_font_montserrat_14, 0);
 
@@ -437,7 +437,7 @@ lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg)
     make_chevron(pager, LV_SYMBOL_LEFT,  on_prev_clicked, &s_btn_prev_lbl);
 
     s_page_lbl = lv_label_create(pager);
-    lv_label_set_text(s_page_lbl, "—");
+    lv_label_set_text(s_page_lbl, "-");
     lv_obj_set_style_text_color(s_page_lbl, UI_COL_TEXT, 0);
     lv_obj_set_style_text_font(s_page_lbl, &lv_font_montserrat_14, 0);
 
@@ -454,7 +454,7 @@ lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_OFF);
 
     s_empty_lbl = lv_label_create(s_list);
-    lv_label_set_text(s_empty_lbl, "Fetching from pota.app…");
+    lv_label_set_text(s_empty_lbl, "Fetching from pota.app...");
     lv_obj_set_style_text_color(s_empty_lbl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_empty_lbl, &lv_font_montserrat_14, 0);
 

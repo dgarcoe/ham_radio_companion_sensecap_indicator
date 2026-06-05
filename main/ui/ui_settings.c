@@ -37,19 +37,19 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
 
     char buf[96];
     snprintf(buf, sizeof(buf), "Callsign  %s",
-             cfg->callsign[0] ? cfg->callsign : "—");
+             cfg->callsign[0] ? cfg->callsign : "-");
     lv_label_set_text(lv_label_create(card), buf);
 
     snprintf(buf, sizeof(buf), "Locator   %s",
-             cfg->locator[0] ? cfg->locator : "—");
+             cfg->locator[0] ? cfg->locator : "-");
     lv_label_set_text(lv_label_create(card), buf);
 
     snprintf(buf, sizeof(buf), "WiFi      %s",
-             cfg->wifi_ssid[0] ? cfg->wifi_ssid : "—");
+             cfg->wifi_ssid[0] ? cfg->wifi_ssid : "-");
     lv_label_set_text(lv_label_create(card), buf);
 
     snprintf(buf, sizeof(buf), "Timezone  %s",
-             cfg->tz[0] ? cfg->tz : "—");
+             cfg->tz[0] ? cfg->tz : "-");
     lv_label_set_text(lv_label_create(card), buf);
 
     lv_obj_t *cluster = lv_obj_create(scr);
@@ -64,7 +64,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_font(ct, &lv_font_montserrat_14, 0);
 
     snprintf(buf, sizeof(buf), "Host  %s",
-             cfg->dx_host[0] ? cfg->dx_host : "—");
+             cfg->dx_host[0] ? cfg->dx_host : "-");
     lv_label_set_text(lv_label_create(cluster), buf);
 
     snprintf(buf, sizeof(buf), "Port  %d", cfg->dx_port);

@@ -72,7 +72,7 @@ static const char *band_status_text(const char *cond)
     if (strstr(cond, "Good")) return "OPEN";
     if (strstr(cond, "Fair")) return "FAIR";
     if (strstr(cond, "Poor")) return "CLOSED";
-    return cond[0] ? cond : "—";
+    return cond[0] ? cond : "-";
 }
 
 static void refresh(const app_prop_data_t *d)
@@ -89,8 +89,8 @@ static void refresh(const app_prop_data_t *d)
     snprintf(buf, sizeof(buf), "%d", d->k_index);
     lv_label_set_text(s_lbl_k, buf);
 
-    lv_label_set_text(s_lbl_xray,   d->xray[0]   ? d->xray   : "—");
-    lv_label_set_text(s_lbl_geomag, d->geomag[0] ? d->geomag : "—");
+    lv_label_set_text(s_lbl_xray,   d->xray[0]   ? d->xray   : "-");
+    lv_label_set_text(s_lbl_geomag, d->geomag[0] ? d->geomag : "-");
 
     snprintf(buf, sizeof(buf), "Updated %s", d->updated);
     lv_label_set_text(s_lbl_updated, buf);
@@ -162,7 +162,7 @@ static lv_obj_t *card_with_value(lv_obj_t *parent, const char *label,
     lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
 
     lv_obj_t *v = lv_label_create(card);
-    lv_label_set_text(v, "—");
+    lv_label_set_text(v, "-");
     lv_obj_set_style_text_color(v, UI_COL_ACCENT, 0);
     lv_obj_set_style_text_font(v, &lv_font_montserrat_24, 0);
     *value_lbl = v;
@@ -237,7 +237,7 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(xl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(xl, &lv_font_montserrat_14, 0);
     s_lbl_xray = lv_label_create(info);
-    lv_label_set_text(s_lbl_xray, "—");
+    lv_label_set_text(s_lbl_xray, "-");
     lv_obj_set_style_text_color(s_lbl_xray, UI_COL_TEXT, 0);
 
     lv_obj_t *gl = lv_label_create(info);
@@ -245,7 +245,7 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(gl, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(gl, &lv_font_montserrat_14, 0);
     s_lbl_geomag = lv_label_create(info);
-    lv_label_set_text(s_lbl_geomag, "—");
+    lv_label_set_text(s_lbl_geomag, "-");
     lv_obj_set_style_text_color(s_lbl_geomag, UI_COL_TEXT, 0);
     ESP_LOGI(TAG, "info panel built");
 
@@ -307,7 +307,7 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     ESP_LOGI(TAG, "VHF rows built");
 
     s_lbl_updated = lv_label_create(scr);
-    lv_label_set_text(s_lbl_updated, "Waiting for data…");
+    lv_label_set_text(s_lbl_updated, "Waiting for data...");
     lv_obj_set_style_text_color(s_lbl_updated, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_lbl_updated, &lv_font_montserrat_14, 0);
 
