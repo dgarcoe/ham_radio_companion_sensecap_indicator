@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define UI_POTA_ROWS_PER_PAGE 6
+#define UI_POTA_ROWS_PER_PAGE 5
 
 typedef struct {
     lv_obj_t *row;
