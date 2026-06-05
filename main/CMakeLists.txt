@@ -7,6 +7,7 @@ idf_component_register(
         "app_time.c"
         "app_propagation.c"
         "app_dxcluster.c"
+        "app_pota.c"
         "bsp.c"
         "ui/ui.c"
         "ui/ui_watch.c"
