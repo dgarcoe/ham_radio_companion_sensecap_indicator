@@ -14,6 +14,7 @@
 #include "app_propagation.h"
 #include "app_dxcluster.h"
 #include "app_pota.h"
+#include "app_sota.h"
 #include "bsp.h"
 #include "ui/ui.h"
 #include "ui/ui_internal.h"
@@ -51,6 +52,7 @@ static esp_timer_handle_t s_reconfig_timer;
 static bool s_prop_started;
 static bool s_dx_started;
 static bool s_pota_started;
+static bool s_sota_started;
 
 /* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
  * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
@@ -127,6 +129,13 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
             s_pota_started = true;
         } else {
             app_pota_request_refresh();
+        }
+        /* SOTA: same shape as POTA. */
+        if (!s_sota_started) {
+            ESP_ERROR_CHECK(app_sota_init(ui_sota_on_update));
+            s_sota_started = true;
+        } else {
+            app_sota_request_refresh();
         }
     }
 }
