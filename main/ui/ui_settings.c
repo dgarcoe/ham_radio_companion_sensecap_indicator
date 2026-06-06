@@ -86,10 +86,13 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
              cfg->alert_enabled ? "yes" : "no");
     lv_label_set_text(lv_label_create(alerts), buf);
 
-    snprintf(buf, sizeof(buf), "Watchlist  %s",
+    /* Watchlist can be up to APP_ALERT_LIST_MAX (~96) bytes - use a
+     * dedicated buffer so it fits with the "Watchlist  " prefix. */
+    char wlbuf[APP_ALERT_LIST_MAX + 16];
+    snprintf(wlbuf, sizeof(wlbuf), "Watchlist  %s",
              cfg->alert_list[0] ? cfg->alert_list : "-");
     lv_obj_t *wl = lv_label_create(alerts);
-    lv_label_set_text(wl, buf);
+    lv_label_set_text(wl, wlbuf);
     lv_label_set_long_mode(wl, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(wl, LV_PCT(100));
 
