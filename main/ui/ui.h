@@ -22,3 +22,7 @@ void ui_show_feature(int feature_index);   /* index into ui_screens[] */
  * (NVS) and applying it (WiFi, status-bar callsign, etc.). */
 typedef void (*ui_settings_saved_cb_t)(const app_config_t *cfg);
 void ui_settings_set_saved_cb(ui_settings_saved_cb_t cb);
+
+/* Show a short toast at the top of the screen for ~6 s. Thread-safe;
+ * takes the LVGL lock internally. Used by the alert engine. */
+void ui_show_alert(const char *text);

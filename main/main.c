@@ -15,6 +15,7 @@
 #include "app_dxcluster.h"
 #include "app_pota.h"
 #include "app_sota.h"
+#include "app_alert.h"
 #include "bsp.h"
 #include "ui/ui.h"
 #include "ui/ui_internal.h"
@@ -57,6 +58,12 @@ static bool s_sota_started;
 /* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
  * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
  * from here. */
+static void alert_visual_cb(app_alert_source_t src, const char *text)
+{
+    (void)src;
+    ui_show_alert(text);
+}
+
 static void reconfig_timer_cb(void *arg)
 {
     (void)arg;
@@ -70,6 +77,7 @@ static void on_portal_saved(const app_config_t *new_cfg)
     s_cfg = *new_cfg;
     app_nvs_save(&s_cfg);
     ui_set_callsign(s_cfg.callsign);
+    app_alert_apply_config(&s_cfg);
 
     if (!s_reconfig_timer) {
         const esp_timer_create_args_t args = {
@@ -89,6 +97,7 @@ static void on_settings_saved(const app_config_t *new_cfg)
     s_cfg = *new_cfg;
     app_nvs_save(&s_cfg);
     ui_set_callsign(s_cfg.callsign);
+    app_alert_apply_config(&s_cfg);
     ESP_LOGI(TAG, "settings saved: callsign='%s' locator='%s' tz='%s' dx=%s:%d",
              s_cfg.callsign, s_cfg.locator, s_cfg.tz,
              s_cfg.dx_host, s_cfg.dx_port);
@@ -110,9 +119,8 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
     if (st == APP_WIFI_AP_PORTAL) {
         app_portal_start(&s_cfg, on_portal_saved);
     } else if (st == APP_WIFI_CONNECTED) {
-        /* Each feature init is best-effort: if a task stack alloc or
-         * socket open fails, log and keep going. A single feature OOM
-         * should never reboot the device via ESP_ERROR_CHECK. */
+        /* Each feature init is best-effort: a single OOM should never
+         * reboot the device via ESP_ERROR_CHECK. */
         if (!s_prop_started) {
             esp_err_t e = app_propagation_init(ui_propagation_on_update);
             if (e == ESP_OK) s_prop_started = true;
@@ -120,7 +128,6 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
         } else {
             app_propagation_request_refresh();
         }
-        /* DX cluster needs a callsign to log in. Skip cleanly if missing. */
         if (!s_dx_started && s_cfg.callsign[0] && s_cfg.dx_host[0]) {
             esp_err_t e = app_dxcluster_init(s_cfg.dx_host, s_cfg.dx_port,
                                              s_cfg.callsign,
@@ -194,6 +201,10 @@ void app_main(void)
     xTaskCreate(ui_init_task, "ui_init", 24 * 1024, ui_done, 5, NULL);
     xSemaphoreTake(ui_done, portMAX_DELAY);
     vSemaphoreDelete(ui_done);
+
+    /* Alert engine: visual layer is ui_show_alert. Must come after UI
+     * is built so the banner is wired up. */
+    app_alert_init(&s_cfg, alert_visual_cb);
 
     ESP_ERROR_CHECK(app_wifi_init(on_wifi_state));
     ESP_ERROR_CHECK(app_wifi_start(&s_cfg));

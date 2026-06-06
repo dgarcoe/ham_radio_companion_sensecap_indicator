@@ -2,6 +2,7 @@
 #include "ui_screens.h"
 #include "ui_theme.h"
 #include "app_sota.h"
+#include "app_alert.h"
 #include "bsp.h"
 #include "esp_attr.h"
 
@@ -271,7 +272,15 @@ static void on_mode_next (lv_event_t *e) { (void)e; cycle_filter(&s_filter_mode,
 
 void ui_sota_on_update(const app_sota_state_t *state)
 {
-    (void)state;
+    if (state) {
+        for (int i = 0; i < state->count; i++) {
+            const app_sota_spot_t *sp = &state->spots[i];
+            char loc[24];
+            if (sp->summit_ref[0]) snprintf(loc, sizeof(loc), "%s", sp->summit_ref);
+            else                   loc[0] = '\0';
+            app_alert_check(APP_ALERT_SRC_SOTA, sp->activator, loc);
+        }
+    }
     atomic_store(&s_dirty, true);
 }
 

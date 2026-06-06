@@ -70,6 +70,29 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     snprintf(buf, sizeof(buf), "Port  %d", cfg->dx_port);
     lv_label_set_text(lv_label_create(cluster), buf);
 
+    /* Alerts card */
+    lv_obj_t *alerts = lv_obj_create(scr);
+    ui_theme_style_panel(alerts);
+    lv_obj_set_size(alerts, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(alerts, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_gap(alerts, 8, 0);
+
+    lv_obj_t *at = lv_label_create(alerts);
+    lv_label_set_text(at, "ALERTS");
+    lv_obj_set_style_text_color(at, UI_COL_MUTED, 0);
+    lv_obj_set_style_text_font(at, &lv_font_montserrat_14, 0);
+
+    snprintf(buf, sizeof(buf), "Enabled    %s",
+             cfg->alert_enabled ? "yes" : "no");
+    lv_label_set_text(lv_label_create(alerts), buf);
+
+    snprintf(buf, sizeof(buf), "Watchlist  %s",
+             cfg->alert_list[0] ? cfg->alert_list : "-");
+    lv_obj_t *wl = lv_label_create(alerts);
+    lv_label_set_text(wl, buf);
+    lv_label_set_long_mode(wl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(wl, LV_PCT(100));
+
     lv_obj_t *hint = lv_label_create(scr);
     lv_label_set_text(hint,
         "Editable on-device settings coming back once LVGL is on PSRAM.\n"

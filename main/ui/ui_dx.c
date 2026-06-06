@@ -2,8 +2,8 @@
 #include "ui_screens.h"
 #include "ui_theme.h"
 #include "app_dxcluster.h"
+#include "app_alert.h"
 #include "bsp.h"
-#include "esp_attr.h"
 
 #include <stdatomic.h>
 #include <ctype.h>
@@ -208,7 +208,7 @@ static int s_filter_band;
 static int s_filter_mode;
 static int s_filter_area;
 
-EXT_RAM_BSS_ATTR static app_dx_state_t s_snap_buf;
+static app_dx_state_t s_snap_buf;
 static atomic_bool s_dirty = ATOMIC_VAR_INIT(true);
 
 /* --- Filter helpers --- */
@@ -451,8 +451,10 @@ static void on_area_down (lv_event_t *e) { (void)e; cycle_filter(&s_filter_area,
 void ui_dx_on_update(const app_dx_spot_t *new_spot,
                      const app_dx_state_t *state)
 {
-    (void)new_spot;
     (void)state;
+    if (new_spot) {
+        app_alert_check(APP_ALERT_SRC_DX, new_spot->dx_call, new_spot->freq);
+    }
     atomic_store(&s_dirty, true);
 }
 

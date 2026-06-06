@@ -10,6 +10,7 @@
 #define APP_PSK_MAX      65
 #define APP_TZ_MAX       32
 #define APP_DX_HOST_MAX  64
+#define APP_ALERT_LIST_MAX 96     /* comma-separated callsign substrings */
 
 typedef struct {
     char callsign[APP_CALLSIGN_MAX];
@@ -19,6 +20,8 @@ typedef struct {
     char tz[APP_TZ_MAX];
     char dx_host[APP_DX_HOST_MAX];
     int  dx_port;
+    char alert_list[APP_ALERT_LIST_MAX]; /* e.g. "ZL,VK,EA1RFI,W7XYZ" */
+    bool alert_enabled;
     bool configured;
 } app_config_t;
 

@@ -40,6 +40,10 @@ static const char INDEX_HTML[] =
 "<label>Grid locator</label><input name=locator id=locator maxlength=8 autocapitalize=characters>"
 "<label>WiFi SSID</label><input name=ssid id=ssid maxlength=32 required>"
 "<label>WiFi password</label><input name=psk id=psk type=password maxlength=64>"
+"<label>Spot alert watchlist</label>"
+"<input name=alert_list id=alert_list maxlength=95 placeholder='ZL,VK,EA1RFI,W7XYZ'>"
+"<label style=display:flex;align-items:center;gap:8px;text-transform:none;color:#e6f5ff;font-size:14px;margin-top:14px>"
+"<input type=checkbox name=alert_enabled id=alert_enabled style=width:auto;margin:0> Enable spot alerts</label>"
 "<button type=submit>Save &amp; connect</button>"
 "<div class=ok id=ok>Saved. Device is reconnecting&hellip;</div>"
 "</form>"
@@ -47,9 +51,12 @@ static const char INDEX_HTML[] =
 "fetch('/config').then(r=>r.json()).then(c=>{"
 "document.getElementById('callsign').value=c.callsign||'';"
 "document.getElementById('locator').value=c.locator||'';"
-"document.getElementById('ssid').value=c.ssid||'';});"
+"document.getElementById('ssid').value=c.ssid||'';"
+"document.getElementById('alert_list').value=c.alert_list||'';"
+"document.getElementById('alert_enabled').checked=c.alert_enabled!==false;});"
 "document.getElementById('f').addEventListener('submit',async e=>{e.preventDefault();"
 "const fd=new FormData(e.target);const b={};fd.forEach((v,k)=>b[k]=v);"
+"b.alert_enabled=document.getElementById('alert_enabled').checked?'1':'0';"
 "const r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});"
 "if(r.ok){document.getElementById('ok').style.display='block';}});"
 "</script></div></body></html>";
@@ -64,10 +71,13 @@ static esp_err_t index_get(httpd_req_t *req)
  * sent back to the browser. */
 static esp_err_t config_get(httpd_req_t *req)
 {
-    char body[256];
+    char body[384];
     int n = snprintf(body, sizeof(body),
-                     "{\"callsign\":\"%s\",\"locator\":\"%s\",\"ssid\":\"%s\"}",
-                     s_cfg.callsign, s_cfg.locator, s_cfg.wifi_ssid);
+                     "{\"callsign\":\"%s\",\"locator\":\"%s\",\"ssid\":\"%s\","
+                     "\"alert_list\":\"%s\",\"alert_enabled\":%s}",
+                     s_cfg.callsign, s_cfg.locator, s_cfg.wifi_ssid,
+                     s_cfg.alert_list,
+                     s_cfg.alert_enabled ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, body, n);
 }
@@ -106,15 +116,19 @@ static esp_err_t save_post(httpd_req_t *req)
     body[r] = '\0';
 
     app_config_t nc = s_cfg;
-    extract(body, "callsign", nc.callsign,  sizeof(nc.callsign));
-    extract(body, "locator",  nc.locator,   sizeof(nc.locator));
-    extract(body, "ssid",     nc.wifi_ssid, sizeof(nc.wifi_ssid));
+    extract(body, "callsign",   nc.callsign,   sizeof(nc.callsign));
+    extract(body, "locator",    nc.locator,    sizeof(nc.locator));
+    extract(body, "ssid",       nc.wifi_ssid,  sizeof(nc.wifi_ssid));
+    extract(body, "alert_list", nc.alert_list, sizeof(nc.alert_list));
 
     char psk[APP_PSK_MAX];
     extract(body, "psk", psk, sizeof(psk));
     if (psk[0] != '\0') {
         strncpy(nc.wifi_psk, psk, sizeof(nc.wifi_psk));
     }
+    char en[4];
+    extract(body, "alert_enabled", en, sizeof(en));
+    nc.alert_enabled = (en[0] == '1');
     nc.configured = (nc.callsign[0] != '\0' && nc.wifi_ssid[0] != '\0');
 
     free(body);

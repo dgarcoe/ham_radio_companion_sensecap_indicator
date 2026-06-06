@@ -120,3 +120,12 @@ esp_err_t bsp_display_start(void)
 
 bool bsp_lvgl_lock(int timeout_ms) { return lvgl_port_lock(timeout_ms); }
 void bsp_lvgl_unlock(void)         { lvgl_port_unlock(); }
+
+void bsp_alert_beep(void)
+{
+    /* TODO: send a beep command to the RP2040 co-processor over UART.
+     * The MLT-8530 piezo on the SenseCAP Indicator is wired to the
+     * RP2040, not the ESP32-S3. Until that path is implemented, the
+     * alarm is visual-only. */
+    ESP_LOGD(TAG, "beep (no-op: RP2040 UART beep not yet wired)");
+}

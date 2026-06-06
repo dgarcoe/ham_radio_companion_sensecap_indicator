@@ -9,6 +9,7 @@ idf_component_register(
         "app_dxcluster.c"
         "app_pota.c"
         "app_sota.c"
+        "app_alert.c"
         "bsp.c"
         "ui/ui.c"
         "ui/ui_watch.c"

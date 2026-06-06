@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdatomic.h>
 
 static app_config_t s_cfg;
 
@@ -18,6 +19,9 @@ static lv_obj_t *s_lbl_sync;
 static lv_obj_t *s_lbl_nav_icon;
 
 static lv_obj_t *s_content;
+static lv_obj_t *s_alert_banner;
+static lv_obj_t *s_alert_lbl;
+static lv_timer_t *s_alert_hide_timer;
 
 /* Screen slots: [0] = watch, [1] = menu, [2..] = features in ui_screens[] order. */
 #define SCR_WATCH 0
@@ -117,6 +121,27 @@ void ui_init(const app_config_t *cfg)
     lv_obj_set_width(s_content, LV_PCT(100));
     lv_obj_set_style_pad_all(s_content, 8, 0);
 
+    /* Alert banner: hidden by default, floats over content when shown. */
+    s_alert_banner = lv_obj_create(s_root);
+    lv_obj_remove_style_all(s_alert_banner);
+    lv_obj_set_size(s_alert_banner, LV_PCT(94), LV_SIZE_CONTENT);
+    lv_obj_align(s_alert_banner, LV_ALIGN_TOP_MID, 0, 56);
+    lv_obj_set_style_bg_color(s_alert_banner, lv_color_hex(0x001a14), 0);
+    lv_obj_set_style_bg_opa(s_alert_banner, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_alert_banner, UI_COL_ACCENT, 0);
+    lv_obj_set_style_border_width(s_alert_banner, 2, 0);
+    lv_obj_set_style_radius(s_alert_banner, 10, 0);
+    lv_obj_set_style_pad_all(s_alert_banner, 10, 0);
+    lv_obj_add_flag(s_alert_banner, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_alert_banner, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_alert_lbl = lv_label_create(s_alert_banner);
+    lv_label_set_text(s_alert_lbl, "");
+    lv_obj_set_style_text_color(s_alert_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(s_alert_lbl, &lv_font_montserrat_18, 0);
+    lv_label_set_long_mode(s_alert_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_alert_lbl, LV_PCT(100));
+
     /* Build every screen up front; toggle visibility on navigate. */
     s_screen_total = SCR_FEATURE_FIRST + ui_screen_count;
     s_screens = lv_malloc(sizeof(lv_obj_t *) * s_screen_total);
@@ -192,4 +217,61 @@ void ui_set_callsign(const char *callsign)
     if (!bsp_lvgl_lock(100)) return;
     lv_label_set_text(s_lbl_callsign, (callsign && callsign[0]) ? callsign : "NO CALL");
     bsp_lvgl_unlock();
+}
+
+/* --- Alert banner -------------------------------------------------------
+ *
+ * The alert engine (running on dx/pota/sota tasks) hands us the text;
+ * we take the LVGL lock, show the banner, and arm a one-shot timer to
+ * hide it. Re-firing while shown just resets the timer + replaces text. */
+
+#define ALERT_HOLD_MS 6000
+
+static char s_alert_pending[64];
+static atomic_bool s_alert_dirty = ATOMIC_VAR_INIT(false);
+
+static void alert_hide_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (s_alert_banner) lv_obj_add_flag(s_alert_banner, LV_OBJ_FLAG_HIDDEN);
+    s_alert_hide_timer = NULL;
+}
+
+static void alert_drain_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (!atomic_exchange(&s_alert_dirty, false)) return;
+    if (!s_alert_banner) return;
+
+    lv_label_set_text(s_alert_lbl, s_alert_pending);
+    lv_obj_remove_flag(s_alert_banner, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_alert_banner);
+
+    if (s_alert_hide_timer) {
+        lv_timer_reset(s_alert_hide_timer);
+    } else {
+        s_alert_hide_timer = lv_timer_create(alert_hide_cb, ALERT_HOLD_MS, NULL);
+        lv_timer_set_repeat_count(s_alert_hide_timer, 1);
+    }
+}
+
+/* Public: copy text into the .bss slot, flip dirty bit. A 200 ms LVGL
+ * timer (registered after first call) does the actual show on the
+ * LVGL task - matches the pattern used by pota/sota refresh. */
+void ui_show_alert(const char *text)
+{
+    if (!text || !text[0]) return;
+    static lv_timer_t *s_drain;
+    /* The first call can come before the drain timer exists; create it
+     * lazily on the LVGL thread. Take the lock to do so safely. */
+    if (!s_drain) {
+        if (!bsp_lvgl_lock(100)) return;
+        if (!s_drain) {
+            s_drain = lv_timer_create(alert_drain_timer_cb, 200, NULL);
+        }
+        bsp_lvgl_unlock();
+    }
+    strncpy(s_alert_pending, text, sizeof(s_alert_pending) - 1);
+    s_alert_pending[sizeof(s_alert_pending) - 1] = '\0';
+    atomic_store(&s_alert_dirty, true);
 }

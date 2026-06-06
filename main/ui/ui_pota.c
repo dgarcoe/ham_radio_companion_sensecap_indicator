@@ -2,6 +2,7 @@
 #include "ui_screens.h"
 #include "ui_theme.h"
 #include "app_pota.h"
+#include "app_alert.h"
 #include "bsp.h"
 #include "esp_attr.h"
 
@@ -275,7 +276,15 @@ static void on_mode_next (lv_event_t *e) { (void)e; cycle_filter(&s_filter_mode,
 
 void ui_pota_on_update(const app_pota_state_t *state)
 {
-    (void)state;
+    if (state) {
+        for (int i = 0; i < state->count; i++) {
+            const app_pota_spot_t *sp = &state->spots[i];
+            char loc[24];
+            if (sp->park_ref[0]) snprintf(loc, sizeof(loc), "%s", sp->park_ref);
+            else                 loc[0] = '\0';
+            app_alert_check(APP_ALERT_SRC_POTA, sp->activator, loc);
+        }
+    }
     atomic_store(&s_dirty, true);
 }
 

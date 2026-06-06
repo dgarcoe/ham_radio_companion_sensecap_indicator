@@ -36,6 +36,7 @@ esp_err_t app_nvs_load(app_config_t *out)
     /* Sensible default cluster; user can change via settings later. */
     strcpy(out->dx_host, "dxc.nc7j.com");
     out->dx_port = 7373;
+    out->alert_enabled = true;
 
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
@@ -54,6 +55,10 @@ esp_err_t app_nvs_load(app_config_t *out)
     if (nvs_get_i32(h, "dx_port", &port) == ESP_OK && port > 0) {
         out->dx_port = port;
     }
+    read_str(h, "alert_list", out->alert_list, sizeof(out->alert_list));
+    uint8_t aen = 1;
+    nvs_get_u8(h, "alert_en", &aen);
+    out->alert_enabled = aen != 0;
 
     uint8_t cfg = 0;
     nvs_get_u8(h, "cfg", &cfg);
@@ -77,6 +82,8 @@ esp_err_t app_nvs_save(const app_config_t *cfg)
     nvs_set_str(h, "tz",       cfg->tz);
     nvs_set_str(h, "dx_host",  cfg->dx_host);
     nvs_set_i32(h, "dx_port",  cfg->dx_port);
+    nvs_set_str(h, "alert_list", cfg->alert_list);
+    nvs_set_u8(h, "alert_en", cfg->alert_enabled ? 1 : 0);
     nvs_set_u8(h, "cfg", cfg->configured ? 1 : 0);
     esp_err_t err = nvs_commit(h);
     nvs_close(h);
