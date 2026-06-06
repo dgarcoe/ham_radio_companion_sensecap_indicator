@@ -1,7 +1,11 @@
 #include "bsp.h"
 
+#include <string.h>
+
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
 
 #include "bsp_board.h"
 #include "bsp_lcd.h"
@@ -121,11 +125,104 @@ esp_err_t bsp_display_start(void)
 bool bsp_lvgl_lock(int timeout_ms) { return lvgl_port_lock(timeout_ms); }
 void bsp_lvgl_unlock(void)         { lvgl_port_unlock(); }
 
+/* --- RP2040 buzzer (MLT-8530 on the auxiliary RP2040) -----------------
+ *
+ * The buzzer is wired to the RP2040, reachable from the ESP32-S3 over
+ * UART2 (TX=GPIO19, RX=GPIO20, 115200 8N1). The Seeed RP2040 stock
+ * firmware accepts COBS-encoded packets terminated by 0x00, with the
+ * first byte being the command id and the rest being the payload.
+ *
+ *   PKT_TYPE_CMD_BEEP_ON  = 0xA1, payload = uint32_t LE milliseconds
+ *   PKT_TYPE_CMD_BEEP_OFF = 0xA2
+ *
+ * COBS encoding (Consistent Overhead Byte Stuffing) replaces in-band
+ * zeros with offset markers so 0x00 can be the unambiguous frame
+ * delimiter. For our small payload (no zeros expected in <250 bytes)
+ * the encoding is simply: [len+1][cmd][payload...][0x00].
+ */
+
+#define RP2040_UART_NUM   UART_NUM_2
+#define RP2040_UART_TX    GPIO_NUM_19
+#define RP2040_UART_RX    GPIO_NUM_20
+#define RP2040_UART_BAUD  115200
+
+#define PKT_TYPE_CMD_BEEP_ON   0xA1
+#define BEEP_MS_DEFAULT        120        /* short, polite chirp */
+
+static bool s_rp2040_uart_ready;
+
+static esp_err_t rp2040_uart_init(void)
+{
+    if (s_rp2040_uart_ready) return ESP_OK;
+
+    const uart_config_t cfg = {
+        .baud_rate = RP2040_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    /* TX-only ring (no RX consumed here; the RP2040 sends sensor data we
+     * ignore - the driver still drains its RX FIFO so nothing stalls). */
+    esp_err_t e = uart_driver_install(RP2040_UART_NUM, 512, 0, 0, NULL, 0);
+    if (e != ESP_OK) return e;
+    e = uart_param_config(RP2040_UART_NUM, &cfg);
+    if (e != ESP_OK) return e;
+    e = uart_set_pin(RP2040_UART_NUM, RP2040_UART_TX, RP2040_UART_RX,
+                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (e != ESP_OK) return e;
+
+    s_rp2040_uart_ready = true;
+    ESP_LOGI(TAG, "RP2040 UART up (UART%d tx=%d rx=%d %d 8N1)",
+             RP2040_UART_NUM, RP2040_UART_TX, RP2040_UART_RX, RP2040_UART_BAUD);
+    return ESP_OK;
+}
+
+/* Encode `in` (len bytes, must NOT contain a frame delimiter 0x00 followed
+ * by anything you care about) into `out` using classic COBS. Returns the
+ * number of bytes written (always len+1, plus the caller appends 0x00). */
+static size_t cobs_encode(const uint8_t *in, size_t len, uint8_t *out)
+{
+    size_t read = 0, write = 0;
+    size_t code_idx = write++;
+    uint8_t code = 1;
+    while (read < len) {
+        if (in[read] == 0) {
+            out[code_idx] = code;
+            code_idx = write++;
+            code = 1;
+        } else {
+            out[write++] = in[read];
+            code++;
+            if (code == 0xFF) {
+                out[code_idx] = code;
+                code_idx = write++;
+                code = 1;
+            }
+        }
+        read++;
+    }
+    out[code_idx] = code;
+    return write;
+}
+
 void bsp_alert_beep(void)
 {
-    /* TODO: send a beep command to the RP2040 co-processor over UART.
-     * The MLT-8530 piezo on the SenseCAP Indicator is wired to the
-     * RP2040, not the ESP32-S3. Until that path is implemented, the
-     * alarm is visual-only. */
-    ESP_LOGD(TAG, "beep (no-op: RP2040 UART beep not yet wired)");
+    if (rp2040_uart_init() != ESP_OK) {
+        ESP_LOGW(TAG, "beep: UART not ready");
+        return;
+    }
+    uint8_t raw[5];
+    uint32_t ms = BEEP_MS_DEFAULT;
+    raw[0] = PKT_TYPE_CMD_BEEP_ON;
+    raw[1] = (uint8_t)(ms      );
+    raw[2] = (uint8_t)(ms >>  8);
+    raw[3] = (uint8_t)(ms >> 16);
+    raw[4] = (uint8_t)(ms >> 24);
+
+    uint8_t enc[8];
+    size_t  n = cobs_encode(raw, sizeof(raw), enc);
+    enc[n++] = 0x00;  /* frame delimiter */
+    uart_write_bytes(RP2040_UART_NUM, (const char *)enc, n);
 }
