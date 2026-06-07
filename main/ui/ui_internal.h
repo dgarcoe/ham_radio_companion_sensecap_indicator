@@ -11,6 +11,10 @@
 lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_menu_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg);
+/* Hide the settings keyboard. The kb is a sibling of the settings form
+ * (so it doesn't scroll with the cards), which means LV_OBJ_FLAG_HIDDEN
+ * on the form doesn't hide it - ui.c calls this when navigating away. */
+void ui_settings_on_hidden(void);
 lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_sota_create(lv_obj_t *parent, const app_config_t *cfg);

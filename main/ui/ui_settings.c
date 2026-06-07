@@ -11,12 +11,16 @@
 /* Editable settings screen.
  *
  * Each card holds labeled lv_textareas; a single lv_keyboard floats over
- * the bottom of the tab area (FLOATING child of the form, so scrolling
- * the form doesn't move the kb and hiding the form hides the kb too).
- * Tapping a TA shows the kb in TEXT_LOWER mode - or NUMBER mode for the
- * DX port field. Tapping the kb's check / X hides it. "Save" reads
- * every TA back into an app_config_t and fires the registered callback,
- * which main.c persists to NVS + applies live. */
+ * the bottom of the tab area (sibling of the scrollable form, not a
+ * child of it: a child would inherit the form's huge bottom padding
+ * when show_kb_for inflates it, and LV_ALIGN_BOTTOM_MID measures from
+ * the content area, so the kb would slide off-screen). Tapping a TA
+ * shows the kb in TEXT_LOWER mode - or NUMBER mode for the DX port
+ * field. Tapping the kb's check / X hides it, and ui.c calls
+ * ui_settings_on_hidden() whenever the user navigates away so the kb
+ * doesn't stay overlaid on the next screen. "Save" reads every TA
+ * back into an app_config_t and fires the registered callback, which
+ * main.c persists to NVS + applies live. */
 
 static ui_settings_saved_cb_t s_saved_cb;
 static app_config_t s_local_cfg;
@@ -204,13 +208,12 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_label_set_text(sl, "Save");
     lv_obj_center(sl);
 
-    /* Keyboard - FLOATING child of the form. FLOATING keeps it pinned
-     * to the bottom regardless of how the user scrolls the form, and
-     * making it a child of scr means it inherits scr's HIDDEN flag, so
-     * navigating away from settings (which hides scr) automatically
-     * hides the kb. Otherwise an in-progress edit would leave the kb
-     * visible on every other screen too. */
-    s_kb = lv_keyboard_create(scr);
+    /* Keyboard - sibling of the form so scrolling the form doesn't
+     * move it. Hidden until a textarea is tapped. ui_show_index() in
+     * ui.c calls ui_settings_on_hidden() whenever the user navigates
+     * off settings, which hides the kb so it doesn't overlay other
+     * screens. */
+    s_kb = lv_keyboard_create(parent);
     lv_obj_set_size(s_kb, LV_PCT(100), LV_PCT(KB_HEIGHT_PCT));
     lv_obj_align(s_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_FLOATING);
@@ -224,4 +227,9 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
 void ui_settings_set_saved_cb(ui_settings_saved_cb_t cb)
 {
     s_saved_cb = cb;
+}
+
+void ui_settings_on_hidden(void)
+{
+    if (s_kb) hide_kb();
 }

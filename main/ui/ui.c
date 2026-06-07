@@ -163,6 +163,11 @@ static void ui_show_index(size_t idx)
 {
     if (idx >= s_screen_total) return;
     if (s_current == idx) return;
+    /* The settings keyboard is a sibling of the settings form (it can't
+     * be a child without inheriting the form's inflated bottom padding
+     * and sliding its BOTTOM_MID anchor off-screen), so hiding the
+     * settings screen doesn't hide the kb. Dismiss it explicitly. */
+    ui_settings_on_hidden();
     lv_obj_add_flag(s_screens[s_current], LV_OBJ_FLAG_HIDDEN);
     s_current = idx;
     lv_obj_clear_flag(s_screens[s_current], LV_OBJ_FLAG_HIDDEN);
