@@ -21,6 +21,7 @@ idf_component_register(
         "ui/ui_pota.c"
         "ui/ui_sota.c"
         "ui/ui_propagation.c"
+        "ui/ui_grayline.c"
     INCLUDE_DIRS
         "."
         "ui"

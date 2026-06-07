@@ -19,6 +19,7 @@ lv_obj_t *ui_dx_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_sota_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg);
+lv_obj_t *ui_grayline_create(lv_obj_t *parent, const app_config_t *cfg);
 
 /* Drives the watch's seconds tick. Owned by ui.c, called by ui_watch.c. */
 void ui_watch_register_tick(lv_obj_t *screen);

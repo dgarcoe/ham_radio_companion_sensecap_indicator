@@ -7,6 +7,7 @@ const ui_screen_def_t ui_screens[] = {
     { "POTA",        LV_SYMBOL_GPS,      ui_pota_create },
     { "SOTA",        LV_SYMBOL_UP,       ui_sota_create },
     { "Propagation", LV_SYMBOL_CHARGE,   ui_propagation_create },
+    { "Grayline",    LV_SYMBOL_IMAGE,    ui_grayline_create },
     { "Settings",    LV_SYMBOL_SETTINGS, ui_settings_create },
 };
 const size_t ui_screen_count = sizeof(ui_screens) / sizeof(ui_screens[0]);
