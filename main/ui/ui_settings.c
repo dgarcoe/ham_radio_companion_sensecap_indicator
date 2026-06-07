@@ -11,12 +11,12 @@
 /* Editable settings screen.
  *
  * Each card holds labeled lv_textareas; a single lv_keyboard floats over
- * the bottom of the tab area (sibling of the scrollable form, not a
- * child of it, so scrolling the form doesn't move the kb). Focusing a
- * TA shows the kb in TEXT_LOWER mode - or NUMBER mode for the DX port
- * field. Tapping the kb's check / X hides it. "Save" reads every TA
- * back into an app_config_t and fires the registered callback, which
- * main.c persists to NVS + applies live. */
+ * the bottom of the tab area (FLOATING child of the form, so scrolling
+ * the form doesn't move the kb and hiding the form hides the kb too).
+ * Tapping a TA shows the kb in TEXT_LOWER mode - or NUMBER mode for the
+ * DX port field. Tapping the kb's check / X hides it. "Save" reads
+ * every TA back into an app_config_t and fires the registered callback,
+ * which main.c persists to NVS + applies live. */
 
 static ui_settings_saved_cb_t s_saved_cb;
 static app_config_t s_local_cfg;
@@ -50,14 +50,22 @@ static void hide_kb(void)
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_HIDDEN);
     lv_keyboard_set_textarea(s_kb, NULL);
     lv_obj_set_style_pad_bottom(s_form, 8, 0);
+    /* While the kb was up we'd inflated pad_bottom to ~45% of the form
+     * height to reserve scroll room. That extends the scrollable range,
+     * so scroll_to_view can land the form well past its real content.
+     * When we shrink pad_bottom back, LVGL doesn't re-clamp the scroll
+     * position, and the user is left looking at empty space below the
+     * Save button - "no options visible". Snap back to the top. */
+    lv_obj_scroll_to_y(s_form, 0, LV_ANIM_OFF);
 }
 
 static void ta_event_cb(lv_event_t *e)
 {
-    lv_event_code_t c = lv_event_get_code(e);
-    if (c == LV_EVENT_FOCUSED || c == LV_EVENT_CLICKED) {
-        show_kb_for(lv_event_get_target_obj(e));
-    }
+    /* CLICKED only: LV_EVENT_FOCUSED also fires during initial layout
+     * (the first focusable widget on a newly-built screen gets focus
+     * even though the screen is still hidden), which left the kb
+     * visible the next time the user opened settings. */
+    show_kb_for(lv_event_get_target_obj(e));
 }
 
 static void kb_event_cb(lv_event_t *e)
@@ -137,7 +145,6 @@ static lv_obj_t *add_field(lv_obj_t *parent, const char *label, const char *valu
     if (password) lv_textarea_set_password_mode(ta, true);
     if (value && value[0]) lv_textarea_set_text(ta, value);
     lv_obj_set_width(ta, LV_PCT(100));
-    lv_obj_add_event_cb(ta, ta_event_cb, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(ta, ta_event_cb, LV_EVENT_CLICKED, NULL);
     return ta;
 }
@@ -197,9 +204,13 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_label_set_text(sl, "Save");
     lv_obj_center(sl);
 
-    /* Keyboard - sibling of the form so scrolling the form doesn't move
-     * it. Hidden until a textarea is focused. */
-    s_kb = lv_keyboard_create(parent);
+    /* Keyboard - FLOATING child of the form. FLOATING keeps it pinned
+     * to the bottom regardless of how the user scrolls the form, and
+     * making it a child of scr means it inherits scr's HIDDEN flag, so
+     * navigating away from settings (which hides scr) automatically
+     * hides the kb. Otherwise an in-progress edit would leave the kb
+     * visible on every other screen too. */
+    s_kb = lv_keyboard_create(scr);
     lv_obj_set_size(s_kb, LV_PCT(100), LV_PCT(KB_HEIGHT_PCT));
     lv_obj_align(s_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_FLOATING);
