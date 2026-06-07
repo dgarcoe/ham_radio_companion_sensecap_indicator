@@ -238,6 +238,15 @@ esp_err_t bsp_lcd_init(void)
              * refresh_on_demand off so the panel keeps scanning
              * autonomously. */
             .flags.double_fb = 1,
+            /* Without a bounce buffer the RGB DMA fetches every pixel
+             * straight from PSRAM. Any contender for that bus -- the
+             * USB-OTG controller waking up on cable plug-in, WiFi DMA
+             * bursts, mbedTLS handshake bursts -- starves the LCD FIFO
+             * for a few PCLKs and the panel loses horizontal sync, so
+             * the whole image slides a few pixels and never recovers
+             * until the next reset. A small internal-SRAM bounce
+             * buffer (10 lines, ~9.4 KB) absorbs those PSRAM stalls. */
+            .bounce_buffer_size_px = brd->LCD_WIDTH * 10,
         };
         esp_lcd_new_rgb_panel(&panel_config, &panel_handle);
         esp_lcd_rgb_panel_event_callbacks_t cbs = {
