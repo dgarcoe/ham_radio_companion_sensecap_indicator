@@ -199,17 +199,32 @@ void app_main(void)
      * out-of-date sdkconfig would silently keep the old smaller value. */
     SemaphoreHandle_t ui_done = xSemaphoreCreateBinary();
     xTaskCreate(ui_init_task, "ui_init", 24 * 1024, ui_done, 5, NULL);
+
+    /* Kick WiFi + SNTP off in parallel with the (slow) UI build. WiFi
+     * association and DHCP take a noticeable fraction of a second on
+     * their own, and SNTP can't fire its first query until DHCP hands
+     * out an IP -- so the longer the watch face stares at a stale
+     * pre-1970 clock, the longer NTP has been waiting on us. Starting
+     * the radio here lets the association run while LVGL is still
+     * cascading styles. By the time ui_init_task signals done, WiFi
+     * is often already CONNECTED and SNTP's first response is back.
+     *
+     * Safety: bsp_display_start above has initialised the LVGL port
+     * (so bsp_lvgl_lock works), and ui_init_task holds the lock for
+     * the whole UI build -- WiFi state callbacks that fire during
+     * this window just block on the lock and apply once it releases.
+     * That requires the ui_set_* setters to wait on the lock rather
+     * than time out at 100 ms; that change is in ui.c. */
+    ESP_ERROR_CHECK(app_wifi_init(on_wifi_state));
+    ESP_ERROR_CHECK(app_wifi_start(&s_cfg));
+    ESP_ERROR_CHECK(app_time_init());
+
     xSemaphoreTake(ui_done, portMAX_DELAY);
     vSemaphoreDelete(ui_done);
 
     /* Alert engine: visual layer is ui_show_alert. Must come after UI
      * is built so the banner is wired up. */
     app_alert_init(&s_cfg, alert_visual_cb);
-
-    ESP_ERROR_CHECK(app_wifi_init(on_wifi_state));
-    ESP_ERROR_CHECK(app_wifi_start(&s_cfg));
-
-    ESP_ERROR_CHECK(app_time_init());
 
     xTaskCreate(time_watch_task, "time_watch", 3072, NULL, 3, NULL);
 }

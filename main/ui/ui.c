@@ -192,10 +192,16 @@ void ui_show_feature(int feature_index)
     ui_show_index(SCR_FEATURE_FIRST + (size_t)feature_index);
 }
 
-/* Status-bar setters (call sites take the LVGL lock for us). */
+/* Status-bar setters. These fire from the WiFi event task and the
+ * time-watch task; if a WiFi state change arrives while ui_init_task
+ * is still building the screen tree (it holds the LVGL lock the whole
+ * time), a 100 ms timeout would just drop the update and leave the
+ * status icon stuck on its initial colour. Wait indefinitely instead
+ * -- the lock is held only briefly elsewhere, so this is bounded by
+ * how long ui_init takes and only matters during boot. */
 void ui_set_wifi(app_wifi_state_t st, const char *ip_or_ap)
 {
-    if (!bsp_lvgl_lock(100)) return;
+    if (!bsp_lvgl_lock(-1)) return;
     lv_color_t c = UI_COL_MUTED;
     const char *sym = LV_SYMBOL_WIFI;
     switch (st) {
@@ -212,14 +218,14 @@ void ui_set_wifi(app_wifi_state_t st, const char *ip_or_ap)
 
 void ui_set_time_synced(bool synced)
 {
-    if (!bsp_lvgl_lock(100)) return;
+    if (!bsp_lvgl_lock(-1)) return;
     lv_obj_set_style_text_color(s_lbl_sync, synced ? UI_COL_ACCENT : UI_COL_MUTED, 0);
     bsp_lvgl_unlock();
 }
 
 void ui_set_callsign(const char *callsign)
 {
-    if (!bsp_lvgl_lock(100)) return;
+    if (!bsp_lvgl_lock(-1)) return;
     lv_label_set_text(s_lbl_callsign, (callsign && callsign[0]) ? callsign : "NO CALL");
     bsp_lvgl_unlock();
 }
