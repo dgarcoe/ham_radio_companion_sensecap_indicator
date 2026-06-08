@@ -154,6 +154,13 @@ static const char *cond_short(const char *c)
     if (strstr(c, "Poor")) return "CLOSED";
     return "-";
 }
+static lv_color_t cond_color(const char *c)
+{
+    if (strstr(c, "Good")) return lv_color_hex(0x00d97e);  /* green  */
+    if (strstr(c, "Fair")) return lv_color_hex(0xffb020);  /* amber  */
+    if (strstr(c, "Poor")) return lv_color_hex(0xff4d6d);  /* red    */
+    return UI_COL_MUTED;
+}
 static lv_color_t geomag_color(const char *g)
 {
     if (strstr(g, "Quiet"))     return lv_color_hex(0x00d97e);
@@ -161,6 +168,40 @@ static lv_color_t geomag_color(const char *g)
     if (strstr(g, "Active") ||
         strstr(g, "Unsettled")) return lv_color_hex(0xffb020);
     return UI_COL_MUTED;
+}
+
+/* ---- solar metric -> colour. Standard HF-condition palette: green for
+ * favourable, amber for marginal, red for poor / disturbed. Thresholds
+ * follow what most propagation guides treat as 'workable' on 20 m+. */
+static lv_color_t sfi_color(int sfi)
+{
+    if (sfi >= 150) return lv_color_hex(0xffcd3a);   /* gold, excellent */
+    if (sfi >= 100) return lv_color_hex(0x00d97e);   /* green, good     */
+    if (sfi >=  80) return lv_color_hex(0xffb020);   /* amber, fair     */
+    if (sfi >=  70) return UI_COL_MUTED;             /* poor            */
+    return UI_COL_DANGER;
+}
+static lv_color_t ssn_color(int ssn)
+{
+    if (ssn >= 120) return lv_color_hex(0xffcd3a);
+    if (ssn >=  60) return lv_color_hex(0x00d97e);
+    if (ssn >=  30) return lv_color_hex(0xffb020);
+    if (ssn >   0)  return UI_COL_MUTED;
+    return UI_COL_DANGER;
+}
+static lv_color_t a_color(int a)
+{
+    if (a <=  7) return lv_color_hex(0x00d97e);      /* quiet      */
+    if (a <= 15) return lv_color_hex(0xffb020);      /* unsettled  */
+    if (a <= 29) return lv_color_hex(0xff8030);      /* active     */
+    return UI_COL_DANGER;                            /* storm      */
+}
+static lv_color_t k_color(int k)
+{
+    if (k <= 2) return lv_color_hex(0x00d97e);
+    if (k == 3) return lv_color_hex(0xffb020);
+    if (k == 4) return lv_color_hex(0xff8030);
+    return UI_COL_DANGER;                            /* >=5 storm  */
 }
 
 static void format_best_bands(const app_prop_data_t *p, bool day,
@@ -186,7 +227,9 @@ static void format_best_bands(const app_prop_data_t *p, bool day,
                  p->bands[best_idx[0]].band,
                  cond_short(p->bands[best_idx[0]].condition));
     } else {
-        snprintf(buf, sz, "%s %s  \xC2\xB7  %s %s",
+        /* U+2022 bullet -- LVGL's default Montserrat range covers it.
+         * U+00B7 middle dot was rendering as a tofu box. */
+        snprintf(buf, sz, "%s %s  \xE2\x80\xA2  %s %s",
                  p->bands[best_idx[0]].band,
                  cond_short(p->bands[best_idx[0]].condition),
                  p->bands[best_idx[1]].band,
@@ -223,12 +266,20 @@ static void refresh_slow(const struct tm *utc)
     if (s_snap_prop.valid) {
         snprintf(buf, sizeof(buf), "%d", s_snap_prop.solar_flux);
         lv_label_set_text(s_sfi_lbl, buf);
+        lv_obj_set_style_text_color(s_sfi_lbl,
+                                    sfi_color(s_snap_prop.solar_flux), 0);
         snprintf(buf, sizeof(buf), "%d", s_snap_prop.sunspots);
         lv_label_set_text(s_ssn_lbl, buf);
+        lv_obj_set_style_text_color(s_ssn_lbl,
+                                    ssn_color(s_snap_prop.sunspots), 0);
         snprintf(buf, sizeof(buf), "%d", s_snap_prop.a_index);
         lv_label_set_text(s_a_lbl, buf);
+        lv_obj_set_style_text_color(s_a_lbl,
+                                    a_color(s_snap_prop.a_index), 0);
         snprintf(buf, sizeof(buf), "%d", s_snap_prop.k_index);
         lv_label_set_text(s_k_lbl, buf);
+        lv_obj_set_style_text_color(s_k_lbl,
+                                    k_color(s_snap_prop.k_index), 0);
 
         lv_label_set_text(s_geomag_lbl,
                           s_snap_prop.geomag[0] ? s_snap_prop.geomag : "-");
@@ -252,6 +303,20 @@ static void refresh_slow(const struct tm *utc)
         snprintf(buf, sizeof(buf), "%s HF:  %s",
                  day_qth ? "Day" : "Night", bbuf);
         lv_label_set_text(s_band_lbl, buf);
+        /* Colour the whole band line by the top-ranked condition so the
+         * row reads like a traffic light: green/amber/red. */
+        const char *best_cond = "";
+        int best_rank_seen = 0;
+        const char *day_tag = day_qth ? "day" : "night";
+        for (int i = 0; i < s_snap_prop.band_count; i++) {
+            if (strcmp(s_snap_prop.bands[i].time, day_tag) != 0) continue;
+            int r = cond_rank(s_snap_prop.bands[i].condition);
+            if (r > best_rank_seen) {
+                best_rank_seen = r;
+                best_cond = s_snap_prop.bands[i].condition;
+            }
+        }
+        lv_obj_set_style_text_color(s_band_lbl, cond_color(best_cond), 0);
     }
 
     /* Latest DX spot */
@@ -291,7 +356,7 @@ static void tick_cb(lv_timer_t *t)
     static const char *months[] = {"JAN","FEB","MAR","APR","MAY","JUN",
                                    "JUL","AUG","SEP","OCT","NOV","DEC"};
     char date[40];
-    snprintf(date, sizeof(date), "%02d %s %04d  \xC2\xB7  DOY %03d",
+    snprintf(date, sizeof(date), "%02d %s %04d  \xE2\x80\xA2  DOY %03d",
              utc.tm_mday, months[utc.tm_mon % 12],
              1900 + utc.tm_year, utc.tm_yday + 1);
     lv_label_set_text(s_date_lbl, date);
@@ -305,16 +370,28 @@ static void tick_cb(lv_timer_t *t)
 }
 
 /* ---- card builders ---- */
-static void build_metric(lv_obj_t *parent, const char *name, lv_obj_t **value_out)
+
+/* Each metric card gets a 3-px coloured stripe along the left edge,
+ * picked at build time to match the metric's family (solar / activity
+ * / geomagnetic). The value text inside is re-coloured every refresh
+ * by refresh_slow() so the stripe stays steady while the value's hue
+ * tracks the current condition. */
+static void build_metric(lv_obj_t *parent, const char *name,
+                         lv_obj_t **value_out, lv_color_t stripe)
 {
     lv_obj_t *card = lv_obj_create(parent);
     ui_theme_style_panel(card);
-    lv_obj_set_size(card, LV_PCT(23), 58);
+    lv_obj_set_size(card, LV_PCT(23), 62);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(card, 4, 0);
     lv_obj_set_style_pad_gap(card, 2, 0);
+    /* Override panel's 1-px all-side border with a 3-px left-only
+     * stripe in the metric's accent colour. */
+    lv_obj_set_style_border_color(card, stripe, 0);
+    lv_obj_set_style_border_width(card, 3, 0);
+    lv_obj_set_style_border_side(card, LV_BORDER_SIDE_LEFT, 0);
 
     lv_obj_t *l = lv_label_create(card);
     lv_label_set_text(l, name);
@@ -328,7 +405,10 @@ static void build_metric(lv_obj_t *parent, const char *name, lv_obj_t **value_ou
     *value_out = v;
 }
 
-static lv_obj_t *build_strip(lv_obj_t *parent)
+/* Same left-stripe treatment for the wide one-line strips below the
+ * metric row. The accent argument groups related rows visually
+ * (solar = mint, sun = gold, propagation = electric, spots = mint). */
+static lv_obj_t *build_strip(lv_obj_t *parent, lv_color_t accent)
 {
     lv_obj_t *s = lv_obj_create(parent);
     ui_theme_style_panel(s);
@@ -338,6 +418,9 @@ static lv_obj_t *build_strip(lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_hor(s, 10, 0);
     lv_obj_set_style_pad_ver(s, 4, 0);
+    lv_obj_set_style_border_color(s, accent, 0);
+    lv_obj_set_style_border_width(s, 3, 0);
+    lv_obj_set_style_border_side(s, LV_BORDER_SIDE_LEFT, 0);
     return s;
 }
 
@@ -371,7 +454,7 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(scr, 6, 0);
-    lv_obj_set_style_pad_gap(scr, 6, 0);
+    lv_obj_set_style_pad_gap(scr, 5, 0);
 
     s_time_lbl = lv_label_create(scr);
     lv_label_set_text(s_time_lbl, "--:--:--");
@@ -379,44 +462,55 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(s_time_lbl, UI_COL_ACCENT, 0);
 
     s_date_lbl = lv_label_create(scr);
-    lv_label_set_text(s_date_lbl, "-- --- ----  \xC2\xB7  DOY ---");
+    lv_label_set_text(s_date_lbl, "-- --- ----  \xE2\x80\xA2  DOY ---");
     lv_obj_set_style_text_font(s_date_lbl, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(s_date_lbl, UI_COL_TEXT, 0);
 
-    /* Solar metric cards */
+    /* Accent palette for the left stripes -- solar / geomagnetic
+     * stuff shares the mint accent, sun rise/set takes the gold,
+     * propagation / activity rows take the electric blue. */
+    const lv_color_t accent_solar = UI_COL_ACCENT;
+    const lv_color_t accent_geo   = lv_color_hex(0xb070ff);  /* magenta */
+    const lv_color_t accent_sun   = lv_color_hex(0xffcd3a);  /* gold    */
+    const lv_color_t accent_prop  = UI_COL_ACCENT_2;
+    const lv_color_t accent_dx    = UI_COL_ACCENT;
+    const lv_color_t accent_pota  = UI_COL_ACCENT_2;
+
+    /* Solar metric cards. Each card has its own family stripe; the
+     * value text re-colours each refresh in refresh_slow(). */
     lv_obj_t *mrow = lv_obj_create(scr);
     lv_obj_remove_style_all(mrow);
     lv_obj_set_size(mrow, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(mrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(mrow, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    build_metric(mrow, "SFI", &s_sfi_lbl);
-    build_metric(mrow, "SSN", &s_ssn_lbl);
-    build_metric(mrow, "A",   &s_a_lbl);
-    build_metric(mrow, "K",   &s_k_lbl);
+    build_metric(mrow, "SFI", &s_sfi_lbl, accent_solar);
+    build_metric(mrow, "SSN", &s_ssn_lbl, accent_solar);
+    build_metric(mrow, "A",   &s_a_lbl,   accent_geo);
+    build_metric(mrow, "K",   &s_k_lbl,   accent_geo);
 
     /* Geomag + X-ray */
-    lv_obj_t *geo = build_strip(scr);
+    lv_obj_t *geo = build_strip(scr, accent_geo);
     labeled_value(geo, "GEOMAG", &s_geomag_lbl, UI_COL_TEXT);
     labeled_value(geo, "X-RAY",  &s_xray_lbl,   UI_COL_TEXT);
 
     /* Sun rise/set at QTH */
-    lv_obj_t *sun = build_strip(scr);
+    lv_obj_t *sun = build_strip(scr, accent_sun);
     s_sun_rise_lbl = lv_label_create(sun);
     lv_label_set_text(s_sun_rise_lbl, LV_SYMBOL_UP "  --");
-    lv_obj_set_style_text_color(s_sun_rise_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_color(s_sun_rise_lbl, accent_sun, 0);
     s_sun_set_lbl = lv_label_create(sun);
     lv_label_set_text(s_sun_set_lbl, LV_SYMBOL_DOWN "  --");
-    lv_obj_set_style_text_color(s_sun_set_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_color(s_sun_set_lbl, accent_sun, 0);
 
     /* Best HF bands now */
-    lv_obj_t *bands = build_strip(scr);
+    lv_obj_t *bands = build_strip(scr, accent_prop);
     s_band_lbl = lv_label_create(bands);
     lv_label_set_text(s_band_lbl, "HF: --");
     lv_obj_set_style_text_color(s_band_lbl, UI_COL_TEXT, 0);
 
     /* Latest DX */
-    lv_obj_t *dx = build_strip(scr);
+    lv_obj_t *dx = build_strip(scr, accent_dx);
     lv_obj_t *dx_hdr = lv_label_create(dx);
     lv_label_set_text(dx_hdr, "DX");
     lv_obj_set_style_text_color(dx_hdr, UI_COL_MUTED, 0);
@@ -426,14 +520,14 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_style_text_color(s_dx_lbl, UI_COL_ACCENT, 0);
 
     /* Latest POTA */
-    lv_obj_t *pota = build_strip(scr);
+    lv_obj_t *pota = build_strip(scr, accent_pota);
     lv_obj_t *pota_hdr = lv_label_create(pota);
     lv_label_set_text(pota_hdr, "POTA");
     lv_obj_set_style_text_color(pota_hdr, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(pota_hdr, &lv_font_montserrat_14, 0);
     s_pota_lbl = lv_label_create(pota);
     lv_label_set_text(s_pota_lbl, "(waiting)");
-    lv_obj_set_style_text_color(s_pota_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_color(s_pota_lbl, UI_COL_ACCENT_2, 0);
 
     return scr;
 }
