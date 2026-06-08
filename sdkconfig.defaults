@@ -72,6 +72,15 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 
+# LVGL's bundled lodepng decoder so the propagation MUF map tab can
+# hand the raw prop.kc2g.com PNG bytes straight at lv_image and get a
+# pixel buffer back. The decoder allocates through lv_malloc which
+# CONFIG_LV_USE_CUSTOM_MALLOC routes to PSRAM, so a ~1100x550 PNG fits.
+# A tiny image cache keeps the decoded buffer warm between paints --
+# without it the tab would re-decode on every redraw.
+CONFIG_LV_USE_LODEPNG=y
+CONFIG_LV_CACHE_DEF_SIZE=2
+
 # Skip LVGL's software anti-aliased mask path. We have no rounded
 # corners / shadows by design - the complex-draw renderer would still
 # walk it for borders + fills and either OOM on the mask alloc or

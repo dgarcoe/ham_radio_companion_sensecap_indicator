@@ -10,6 +10,7 @@ idf_component_register(
         "app_pota.c"
         "app_sota.c"
         "app_sats.c"
+        "app_mufmap.c"
         "app_alert.c"
         "bsp.c"
         "ui/ui.c"

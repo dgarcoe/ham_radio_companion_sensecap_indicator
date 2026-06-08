@@ -17,6 +17,7 @@
 #include "app_pota.h"
 #include "app_sota.h"
 #include "app_sats.h"
+#include "app_mufmap.h"
 #include "app_alert.h"
 #include "bsp.h"
 #include "ui/ui.h"
@@ -57,6 +58,7 @@ static bool s_dx_started;
 static bool s_pota_started;
 static bool s_sota_started;
 static bool s_sats_started;
+static bool s_mufmap_started;
 
 /* Decode a Maidenhead locator (4 or 6 char) into the centre lat/lon.
  * Shared with ui_grayline + ui_watch, but those modules are
@@ -210,6 +212,13 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
         } else {
             update_sats_qth();
             app_sats_request_refresh();
+        }
+        if (!s_mufmap_started) {
+            esp_err_t e = app_mufmap_init(ui_mufmap_on_update);
+            if (e == ESP_OK) s_mufmap_started = true;
+            else ESP_LOGE(TAG, "mufmap init failed: %s", esp_err_to_name(e));
+        } else {
+            app_mufmap_request_refresh();
         }
     }
 }

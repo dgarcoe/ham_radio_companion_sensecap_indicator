@@ -7,6 +7,7 @@
 #include "app_pota.h"
 #include "app_sota.h"
 #include "app_sats.h"
+#include "app_mufmap.h"
 
 /* Each screen creator renders into `parent` and owns all children. */
 lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg);
@@ -42,3 +43,7 @@ void ui_sota_on_update(const app_sota_state_t *state);
 
 /* Satellites: thread-safe push from the predictor task. */
 void ui_sats_on_update(const app_sats_state_t *state);
+
+/* MUF map (prop.kc2g.com): bytes-arrived push. Triggers an LVGL image
+ * re-decode inside the propagation tab. */
+void ui_mufmap_on_update(const app_mufmap_snap_t *snap);
