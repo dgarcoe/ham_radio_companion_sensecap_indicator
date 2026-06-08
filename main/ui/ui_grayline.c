@@ -3,6 +3,7 @@
 #include "ui_theme.h"
 #include "ui.h"
 #include "app_nvs.h"
+#include "app_propagation.h"
 #include "bsp.h"
 #include "esp_log.h"
 #include "esp_attr.h"
@@ -36,10 +37,41 @@ static lv_obj_t *s_canvas;
 static lv_obj_t *s_lbl_utc;
 static lv_obj_t *s_lbl_sun;
 static lv_obj_t *s_lbl_station;
+static lv_obj_t *s_lbl_moon;
+static lv_obj_t *s_lbl_inspect;
 static lv_timer_t *s_refresh_timer;
+static lv_timer_t *s_inspect_hide_timer;
 
 static float s_station_lat = NAN;
 static float s_station_lon = NAN;
+
+/* MUF contour thresholds (squared so we can compare against muf^2 and
+ * skip the per-pixel sqrtf). Values: 14 MHz (20m), 21 MHz (15m),
+ * 28 MHz (10m). Colours picked to read against both day and night
+ * fills -- 20m warm red, 15m amber, 10m bright green. */
+#define MUF_BAND_COUNT 3
+static const float    s_muf_thresh_sq[MUF_BAND_COUNT] = {196.0f, 441.0f, 784.0f};
+static const uint16_t s_muf_colors[MUF_BAND_COUNT] = {
+    /* rgb565 inlined to keep the array const */
+    ((0xFF & 0xF8) << 8) | ((0x60 & 0xFC) << 3) | (0x60 >> 3),  /* 14 */
+    ((0xFF & 0xF8) << 8) | ((0xC0 & 0xFC) << 3) | (0x40 >> 3),  /* 21 */
+    ((0x60 & 0xF8) << 8) | ((0xFF & 0xFC) << 3) | (0xA0 >> 3),  /* 28 */
+};
+
+/* Davies-style overhead MUF approximation:
+ *   foF2 (MHz) ~ MUF_K * sqrt(max(SFI, SFI_FLOOR))
+ *                       * sqrt(max(cos_zenith, COS_ZEN_FLOOR))
+ *   MUF_overhead ~ foF2 * MUF_HOP_FACTOR
+ * Squared form (so the per-pixel test stays sqrt-free):
+ *   muf^2 = MUF_K^2 * MUF_HOP_FACTOR^2 * SFI_eff * cos_zen_eff
+ *         = M2_BASE                  * cos_zen_eff      (with SFI baked in)
+ * The cos-zenith floor gives a small residual ionization on the night
+ * side so contours degrade smoothly across the terminator instead of
+ * snapping to zero. */
+#define MUF_K           1.15f
+#define MUF_HOP_FACTOR  3.0f
+#define MUF_SFI_FLOOR   60.0f
+#define MUF_COS_FLOOR   0.10f
 
 /* ---------- continent polygons -------------------------------------
  * Each polygon is a flat (lat, lon) int16_t pair list, traced from the
@@ -394,15 +426,198 @@ static inline uint16_t shade(bool land, float sin_elev)
     return rgb565(r, g, b);
 }
 
-static void plot_marker(int cx, int cy, uint16_t color)
+static void plot_marker_r(int cx, int cy, uint16_t color, int r)
 {
-    for (int dy = -3; dy <= 3; dy++) {
-        for (int dx = -3; dx <= 3; dx++) {
-            if (dx * dx + dy * dy > 9) continue;
+    int r2 = r * r;
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            if (dx * dx + dy * dy > r2) continue;
             int px = cx + dx, py = cy + dy;
             if (px < 0 || px >= GL_W || py < 0 || py >= GL_H) continue;
             s_canvas_buf[py * GL_W + px] = color;
         }
+    }
+}
+
+static void plot_marker(int cx, int cy, uint16_t color)
+{
+    plot_marker_r(cx, cy, color, 3);
+}
+
+/* ---------- moon subpoint (low-precision lunar ephemeris) ---------- */
+
+/* Approximate location of the moon's subpoint at `now`. Based on the
+ * standard short series from Meeus chap. 47 (mean longitude + first
+ * correction in M; mean argument-of-latitude for ecliptic lat). Good
+ * to a few degrees -- plenty for plotting a dot on a 460-px map.
+ * Uses double precision because the days-since-J2000 term grows past
+ * what a 24-bit float mantissa preserves to the day. */
+static void compute_moon(time_t now, float *sublat_deg, float *sublon_deg)
+{
+    /* J2000.0 = 2000-01-01 12:00:00 UTC = unix 946728000. */
+    double d = ((double)now - 946728000.0) / 86400.0;
+
+    double L = fmod(218.316 + 13.176396 * d, 360.0);  /* mean longitude */
+    double M = fmod(134.963 + 13.064993 * d, 360.0);  /* mean anomaly  */
+    double F = fmod( 93.272 + 13.229350 * d, 360.0);  /* arg. of lat.  */
+
+    const double DEG = M_PI / 180.0;
+    double lambda = (L + 6.289 * sin(M * DEG)) * DEG;    /* ecliptic lon */
+    double beta   = (5.128 * sin(F * DEG))     * DEG;    /* ecliptic lat */
+    double eps    = 23.4397 * DEG;                       /* obliquity   */
+
+    double sin_dec = sin(beta) * cos(eps)
+                   + cos(beta) * sin(eps) * sin(lambda);
+    double dec_rad = asin(sin_dec);
+    double ra_rad  = atan2(sin(lambda) * cos(eps) - tan(beta) * sin(eps),
+                           cos(lambda));
+    double ra_hours = ra_rad * (12.0 / M_PI);
+    if (ra_hours < 0.0) ra_hours += 24.0;
+
+    /* GMST in hours, simplified from days since J2000. */
+    double gmst = fmod(18.697374558 + 24.06570982441908 * d, 24.0);
+    if (gmst < 0.0) gmst += 24.0;
+
+    double ha = gmst - ra_hours;                /* hour angle, hours */
+    double sub_lon = -15.0 * ha;
+    while (sub_lon >  180.0) sub_lon -= 360.0;
+    while (sub_lon < -180.0) sub_lon += 360.0;
+
+    *sublat_deg = (float)(dec_rad * (180.0 / M_PI));
+    *sublon_deg = (float)sub_lon;
+}
+
+/* ---------- Maidenhead + great-circle (for touch-to-inspect) ------- */
+
+static void latlon_to_maidenhead(float lat, float lon, char out[7])
+{
+    float a = lon + 180.0f;
+    float b = lat +  90.0f;
+    if (a < 0.0f)         a = 0.0f;
+    if (a >= 360.0f)      a = 359.999f;
+    if (b < 0.0f)         b = 0.0f;
+    if (b >= 180.0f)      b = 179.999f;
+
+    int A = (int)(a / 20.0f);     a -= A * 20.0f;
+    int B = (int)(b / 10.0f);     b -= B * 10.0f;
+    int d1 = (int)(a / 2.0f);     a -= d1 * 2.0f;
+    int d2 = (int)b;              b -= d2;
+    int s1 = (int)(a * 12.0f);    /* 24 subsquares per 2-deg square */
+    int s2 = (int)(b * 24.0f);
+    if (s1 > 23) s1 = 23;
+    if (s2 > 23) s2 = 23;
+
+    out[0] = 'A' + A;
+    out[1] = 'A' + B;
+    out[2] = '0' + d1;
+    out[3] = '0' + d2;
+    out[4] = 'a' + s1;
+    out[5] = 'a' + s2;
+    out[6] = '\0';
+}
+
+/* Haversine distance (km) + initial bearing (degrees, 0 = north,
+ * clockwise) from point 1 to point 2. */
+static void great_circle(float lat1, float lon1, float lat2, float lon2,
+                         float *km, float *bearing_deg)
+{
+    const float DEG = (float)M_PI / 180.0f;
+    float phi1 = lat1 * DEG;
+    float phi2 = lat2 * DEG;
+    float dphi = (lat2 - lat1) * DEG;
+    float dlam = (lon2 - lon1) * DEG;
+
+    float sdp = sinf(dphi * 0.5f);
+    float sdl = sinf(dlam * 0.5f);
+    float a = sdp * sdp + cosf(phi1) * cosf(phi2) * sdl * sdl;
+    float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
+    *km = 6371.0f * c;
+
+    float y = sinf(dlam) * cosf(phi2);
+    float x = cosf(phi1) * sinf(phi2)
+            - sinf(phi1) * cosf(phi2) * cosf(dlam);
+    float brg = atan2f(y, x) * (180.0f / (float)M_PI);
+    if (brg < 0.0f) brg += 360.0f;
+    *bearing_deg = brg;
+}
+
+/* ---------- touch-to-inspect --------------------------------------- */
+
+static void inspect_hide_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (s_lbl_inspect) lv_obj_add_flag(s_lbl_inspect, LV_OBJ_FLAG_HIDDEN);
+    s_inspect_hide_timer = NULL;
+}
+
+static void on_canvas_clicked(lv_event_t *e)
+{
+    lv_indev_t *indev = lv_event_get_indev(e);
+    if (!indev) return;
+    lv_point_t pt;
+    lv_indev_get_point(indev, &pt);
+
+    lv_area_t area;
+    lv_obj_get_coords(s_canvas, &area);
+    int px = pt.x - area.x1;
+    int py = pt.y - area.y1;
+    if (px < 0 || px >= GL_W || py < 0 || py >= GL_H) return;
+
+    float lon = -180.0f + (px + 0.5f) * (360.0f / GL_W);
+    float lat =   90.0f - (py + 0.5f) * (180.0f / GL_H);
+
+    char grid[7];
+    latlon_to_maidenhead(lat, lon, grid);
+
+    /* Sun elevation at the tapped point => day/night flag. */
+    time_t now = time(NULL);
+    float decl_deg, sublon_deg;
+    compute_sun(now, &decl_deg, &sublon_deg);
+    float decl_rad = decl_deg * (float)M_PI / 180.0f;
+    float lat_rad  = lat       * (float)M_PI / 180.0f;
+    float dlon_rad = (lon - sublon_deg) * (float)M_PI / 180.0f;
+    float sin_elev = sinf(lat_rad) * sinf(decl_rad)
+                   + cosf(lat_rad) * cosf(decl_rad) * cosf(dlon_rad);
+    const char *daynight = (sin_elev >  0.10f) ? "DAY"
+                         : (sin_elev < -0.10f) ? "NIGHT"
+                                               : "GRAYLINE";
+
+    /* Local mean time at this longitude, no DST / tz corrections. */
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    float utc_hours = utc.tm_hour + utc.tm_min / 60.0f;
+    float local_hours = utc_hours + lon / 15.0f;
+    while (local_hours <  0.0f) local_hours += 24.0f;
+    while (local_hours >= 24.0f) local_hours -= 24.0f;
+    int lh = (int)local_hours;
+    int lm = (int)((local_hours - lh) * 60.0f);
+    if (lm < 0) lm = 0;
+    if (lm > 59) lm = 59;
+
+    char dist_str[48];
+    if (!isnan(s_station_lat) && !isnan(s_station_lon)) {
+        float km, brg;
+        great_circle(s_station_lat, s_station_lon, lat, lon, &km, &brg);
+        snprintf(dist_str, sizeof(dist_str),
+                 "%.0f km   bearing %.0f\xC2\xB0",
+                 (double)km, (double)brg);
+    } else {
+        snprintf(dist_str, sizeof(dist_str), "(set locator for distance)");
+    }
+
+    char buf[160];
+    snprintf(buf, sizeof(buf),
+             "%+5.1f\xC2\xB0 %+6.1f\xC2\xB0   %s   %s   %02d:%02d local\n%s",
+             (double)lat, (double)lon, grid, daynight, lh, lm, dist_str);
+    lv_label_set_text(s_lbl_inspect, buf);
+    lv_obj_remove_flag(s_lbl_inspect, LV_OBJ_FLAG_HIDDEN);
+
+    /* Re-arm a 6 s one-shot to dismiss. */
+    if (s_inspect_hide_timer) {
+        lv_timer_reset(s_inspect_hide_timer);
+    } else {
+        s_inspect_hide_timer = lv_timer_create(inspect_hide_cb, 6000, NULL);
+        lv_timer_set_repeat_count(s_inspect_hide_timer, 1);
     }
 }
 
@@ -425,6 +640,24 @@ static void draw_grayline(time_t now)
         cos_dlon[x] = cosf(dlon);
     }
 
+    /* Pull SFI from the propagation snapshot. If it isn't valid yet
+     * (first fetch hasn't landed), skip the MUF contours entirely --
+     * a fake SFI of 0 would just paint a sea-level contour everywhere. */
+    app_prop_data_t prop;
+    app_propagation_get(&prop);
+    bool muf_on = prop.valid && prop.solar_flux > 0;
+    float sfi_eff = (float)prop.solar_flux;
+    if (sfi_eff < MUF_SFI_FLOOR) sfi_eff = MUF_SFI_FLOOR;
+    /* M2 collapses MUF_K^2 * HOP^2 * SFI into one constant per refresh:
+     * we then just need muf^2 = M2 * cos_zen_clamped per pixel. */
+    float m2 = (MUF_K * MUF_K) * (MUF_HOP_FACTOR * MUF_HOP_FACTOR) * sfi_eff;
+
+    /* Scratch row for vertical contour-crossing detection: the previous
+     * row's muf^2 at column x. We sentinel-fill with NaN so the first
+     * row never spuriously triggers a vertical crossing. */
+    static float prev_row_muf2[GL_W];
+    for (int x = 0; x < GL_W; x++) prev_row_muf2[x] = NAN;
+
     for (int y = 0; y < GL_H; y++) {
         float lat_deg = 90.0f - (y + 0.5f) * (180.0f / GL_H);
         float lat_rad = lat_deg * (float)M_PI / 180.0f;
@@ -434,9 +667,39 @@ static void draw_grayline(time_t now)
         float b = cos_lat * cos_decl;
         uint16_t *row  = &s_canvas_buf[y * GL_W];
         const uint8_t *mrow = &s_landmask[y * LANDMASK_BYTES_PER_ROW];
+
+        float prev_col_muf2 = NAN;
         for (int x = 0; x < GL_W; x++) {
             bool land = (mrow[x >> 3] >> (x & 7)) & 1u;
-            row[x] = shade(land, a + b * cos_dlon[x]);
+            float sin_elev = a + b * cos_dlon[x];
+            uint16_t color = shade(land, sin_elev);
+
+            if (muf_on) {
+                float cz = sin_elev;
+                if (cz < MUF_COS_FLOOR) cz = MUF_COS_FLOOR;
+                float muf2 = m2 * cz;
+
+                /* A contour pixel is one whose muf^2 sits on the
+                 * opposite side of a threshold from either its left
+                 * or upper neighbour. Test each threshold; pick the
+                 * highest band whose contour passes through here so
+                 * 10 m draws over 15 m draws over 20 m. */
+                for (int k = MUF_BAND_COUNT - 1; k >= 0; k--) {
+                    float t2 = s_muf_thresh_sq[k];
+                    bool cross_h = !isnan(prev_col_muf2)
+                                && ((prev_col_muf2 < t2) != (muf2 < t2));
+                    bool cross_v = !isnan(prev_row_muf2[x])
+                                && ((prev_row_muf2[x] < t2) != (muf2 < t2));
+                    if (cross_h || cross_v) {
+                        color = s_muf_colors[k];
+                        break;
+                    }
+                }
+                prev_col_muf2 = muf2;
+                prev_row_muf2[x] = muf2;
+            }
+
+            row[x] = color;
         }
     }
 
@@ -444,6 +707,13 @@ static void draw_grayline(time_t now)
     int sx = (int)((sublon_deg + 180.0f) * (GL_W / 360.0f));
     int sy = (int)((90.0f      - decl_deg) * (GL_H / 180.0f));
     plot_marker(sx, sy, rgb565(0xFF, 0xF0, 0xA0));
+
+    /* Moon subpoint (cool white, smaller than the sun). */
+    float moon_lat, moon_lon;
+    compute_moon(now, &moon_lat, &moon_lon);
+    int mx = (int)((moon_lon + 180.0f) * (GL_W / 360.0f));
+    int my = (int)((90.0f - moon_lat) * (GL_H / 180.0f));
+    plot_marker_r(mx, my, rgb565(0xD8, 0xD8, 0xE8), 2);
 
     /* Operator QTH (cyan) */
     if (!isnan(s_station_lat) && !isnan(s_station_lon)) {
@@ -455,18 +725,29 @@ static void draw_grayline(time_t now)
     /* Labels under the map */
     struct tm tm_utc;
     gmtime_r(&now, &tm_utc);
-    char buf[64];
+    char buf[80];
     snprintf(buf, sizeof(buf), "UTC %02d:%02d:%02d",
              tm_utc.tm_hour, tm_utc.tm_min, tm_utc.tm_sec);
     lv_label_set_text(s_lbl_utc, buf);
 
-    snprintf(buf, sizeof(buf), "Sun  %+5.1f\xC2\xB0  %+6.1f\xC2\xB0",
-             decl_deg, sublon_deg);
+    if (muf_on) {
+        snprintf(buf, sizeof(buf),
+                 "Sun %+5.1f\xC2\xB0 %+6.1f\xC2\xB0  \xE2\x80\xA2  "
+                 "MUF lines: 14 / 21 / 28 MHz  SFI %d",
+                 (double)decl_deg, (double)sublon_deg, prop.solar_flux);
+    } else {
+        snprintf(buf, sizeof(buf), "Sun  %+5.1f\xC2\xB0  %+6.1f\xC2\xB0",
+                 (double)decl_deg, (double)sublon_deg);
+    }
     lv_label_set_text(s_lbl_sun, buf);
+
+    snprintf(buf, sizeof(buf), "Moon %+5.1f\xC2\xB0 %+6.1f\xC2\xB0",
+             (double)moon_lat, (double)moon_lon);
+    lv_label_set_text(s_lbl_moon, buf);
 
     if (!isnan(s_station_lat)) {
         snprintf(buf, sizeof(buf), "QTH  %+5.1f\xC2\xB0  %+6.1f\xC2\xB0",
-                 s_station_lat, s_station_lon);
+                 (double)s_station_lat, (double)s_station_lon);
     } else {
         snprintf(buf, sizeof(buf), "QTH  (set locator in Settings)");
     }
@@ -512,16 +793,39 @@ lv_obj_t *ui_grayline_create(lv_obj_t *parent, const app_config_t *cfg)
     s_canvas = lv_canvas_create(scr);
     lv_canvas_set_buffer(s_canvas, s_canvas_buf,
                          GL_W, GL_H, LV_COLOR_FORMAT_RGB565);
+    /* Touch-to-inspect: any tap on the map shows lat/lon/grid/distance
+     * for the touched point, with a 6 s auto-dismiss. Need the
+     * CLICKABLE flag explicitly because lv_canvas defaults to
+     * non-interactive. */
+    lv_obj_add_flag(s_canvas, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_canvas, on_canvas_clicked, LV_EVENT_CLICKED, NULL);
 
     s_lbl_sun = lv_label_create(scr);
     lv_obj_set_style_text_color(s_lbl_sun, UI_COL_TEXT, 0);
     lv_obj_set_style_text_font(s_lbl_sun, &lv_font_montserrat_18, 0);
     lv_label_set_text(s_lbl_sun, "Sun  --");
 
+    s_lbl_moon = lv_label_create(scr);
+    lv_obj_set_style_text_color(s_lbl_moon, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(s_lbl_moon, &lv_font_montserrat_18, 0);
+    lv_label_set_text(s_lbl_moon, "Moon --");
+
     s_lbl_station = lv_label_create(scr);
     lv_obj_set_style_text_color(s_lbl_station, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_lbl_station, &lv_font_montserrat_18, 0);
     lv_label_set_text(s_lbl_station, "QTH  --");
+
+    /* Touch popup. Hidden until the user taps the map; auto-dismisses
+     * 6 s after the most recent tap. Two lines of montserrat_14 so the
+     * full coords + distance string fits without truncation. */
+    s_lbl_inspect = lv_label_create(scr);
+    lv_obj_set_width(s_lbl_inspect, LV_PCT(96));
+    lv_obj_set_style_text_color(s_lbl_inspect, UI_COL_ACCENT_2, 0);
+    lv_obj_set_style_text_font(s_lbl_inspect, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(s_lbl_inspect, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lbl_inspect, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(s_lbl_inspect, "");
+    lv_obj_add_flag(s_lbl_inspect, LV_OBJ_FLAG_HIDDEN);
 
     draw_grayline(time(NULL));
     s_refresh_timer = lv_timer_create(refresh_cb, 30 * 1000, NULL);
