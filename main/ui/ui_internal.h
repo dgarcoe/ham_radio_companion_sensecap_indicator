@@ -6,6 +6,7 @@
 #include "app_dxcluster.h"
 #include "app_pota.h"
 #include "app_sota.h"
+#include "app_sats.h"
 
 /* Each screen creator renders into `parent` and owns all children. */
 lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg);
@@ -20,6 +21,7 @@ lv_obj_t *ui_pota_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_sota_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg);
 lv_obj_t *ui_grayline_create(lv_obj_t *parent, const app_config_t *cfg);
+lv_obj_t *ui_sats_create(lv_obj_t *parent, const app_config_t *cfg);
 
 /* Drives the watch's seconds tick. Owned by ui.c, called by ui_watch.c. */
 void ui_watch_register_tick(lv_obj_t *screen);
@@ -37,3 +39,6 @@ void ui_pota_on_update(const app_pota_state_t *state);
 
 /* SOTA: same pattern as POTA. */
 void ui_sota_on_update(const app_sota_state_t *state);
+
+/* Satellites: thread-safe push from the predictor task. */
+void ui_sats_on_update(const app_sats_state_t *state);

@@ -9,6 +9,7 @@ idf_component_register(
         "app_dxcluster.c"
         "app_pota.c"
         "app_sota.c"
+        "app_sats.c"
         "app_alert.c"
         "bsp.c"
         "ui/ui.c"
@@ -22,6 +23,7 @@ idf_component_register(
         "ui/ui_sota.c"
         "ui/ui_propagation.c"
         "ui/ui_grayline.c"
+        "ui/ui_sats.c"
     INCLUDE_DIRS
         "."
         "ui"

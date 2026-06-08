@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include <math.h>
 #include <string.h>
 
 #include "app_nvs.h"
@@ -15,6 +16,7 @@
 #include "app_dxcluster.h"
 #include "app_pota.h"
 #include "app_sota.h"
+#include "app_sats.h"
 #include "app_alert.h"
 #include "bsp.h"
 #include "ui/ui.h"
@@ -54,6 +56,51 @@ static bool s_prop_started;
 static bool s_dx_started;
 static bool s_pota_started;
 static bool s_sota_started;
+static bool s_sats_started;
+
+/* Decode a Maidenhead locator (4 or 6 char) into the centre lat/lon.
+ * Shared with ui_grayline + ui_watch, but those modules are
+ * independent translation units -- duplicating ~20 lines is cheaper
+ * than introducing a shared util header for one function. */
+static bool parse_locator(const char *loc, float *out_lat, float *out_lon)
+{
+    if (!loc) return false;
+    size_t n = strlen(loc);
+    if (n < 4) return false;
+    if (n > 6) n = 6;
+    char L[6] = {0};
+    for (size_t i = 0; i < n; i++) L[i] = loc[i];
+    int A = (L[0] >= 'a') ? (L[0] - 'a') : (L[0] - 'A');
+    int B = (L[1] >= 'a') ? (L[1] - 'a') : (L[1] - 'A');
+    if (A < 0 || A > 17 || B < 0 || B > 17) return false;
+    int d1 = L[2] - '0', d2 = L[3] - '0';
+    if (d1 < 0 || d1 > 9 || d2 < 0 || d2 > 9) return false;
+    float lon = A * 20.0f - 180.0f + d1 * 2.0f + 1.0f;
+    float lat = B * 10.0f -  90.0f + d2 * 1.0f + 0.5f;
+    if (n >= 6) {
+        int s1 = (L[4] >= 'a') ? (L[4] - 'a') : (L[4] - 'A');
+        int s2 = (L[5] >= 'a') ? (L[5] - 'a') : (L[5] - 'A');
+        if (s1 >= 0 && s1 < 24 && s2 >= 0 && s2 < 24) {
+            lon += -1.0f + s1 * (2.0f / 24.0f) + (1.0f / 24.0f);
+            lat += -0.5f + s2 * (1.0f / 24.0f) + (0.5f / 24.0f);
+        }
+    }
+    *out_lon = lon;
+    *out_lat = lat;
+    return true;
+}
+
+/* Push the current QTH into the sat tracker. Called after config load
+ * and whenever the user edits the locator. */
+static void update_sats_qth(void)
+{
+    float lat, lon;
+    if (parse_locator(s_cfg.locator, &lat, &lon)) {
+        app_sats_set_qth(lat, lon);
+    } else {
+        app_sats_set_qth(NAN, NAN);
+    }
+}
 
 /* Runs off the esp_timer task, AFTER the HTTP handler has returned and the
  * portal's worker thread is idle. Safe to stop httpd and switch WiFi mode
@@ -109,6 +156,9 @@ static void on_settings_saved(const app_config_t *new_cfg)
     if (s_dx_started) {
         app_dxcluster_reconfigure(s_cfg.dx_host, s_cfg.dx_port, s_cfg.callsign);
     }
+    /* Locator likely changed -- push the new QTH at the sat predictor
+     * so its next pass calculations match where the user actually is. */
+    if (s_sats_started) update_sats_qth();
 }
 
 static void on_wifi_state(app_wifi_state_t st, const char *ip)
@@ -148,6 +198,18 @@ static void on_wifi_state(app_wifi_state_t st, const char *ip)
             else ESP_LOGE(TAG, "sota init failed: %s", esp_err_to_name(e));
         } else {
             app_sota_request_refresh();
+        }
+        if (!s_sats_started) {
+            esp_err_t e = app_sats_init(ui_sats_on_update);
+            if (e == ESP_OK) {
+                s_sats_started = true;
+                update_sats_qth();
+            } else {
+                ESP_LOGE(TAG, "sats init failed: %s", esp_err_to_name(e));
+            }
+        } else {
+            update_sats_qth();
+            app_sats_request_refresh();
         }
     }
 }
