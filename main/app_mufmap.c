@@ -16,8 +16,11 @@ static const char *TAG = "app_mufmap";
 
 /* prop.kc2g.com renders the global F2 MUF map continuously. The
  * 'normal' projection at the 'now' timestamp is the canonical view --
- * other timestamps and projections exist but we want the live one. */
-#define MUFMAP_URL          "https://prop.kc2g.com/renders/current/mufd-normal-now.png"
+ * served as SVG; there is no PNG version of the live render (the
+ * earlier .png URL was a 404). LVGL's bundled Thorvg-backed SVG
+ * decoder reads it straight from the buffer once we hand cf=RAW at
+ * the image dsc. */
+#define MUFMAP_URL          "https://prop.kc2g.com/renders/current/mufd-normal-now.svg"
 #define MUFMAP_BUF_BYTES    (512 * 1024)
 
 #define FETCH_INTERVAL_MS   (15 * 60 * 1000)
@@ -29,7 +32,7 @@ static app_mufmap_cb_t   s_cb;
 
 /* Two buffers: one being filled by an in-flight fetch, one being
  * displayed. We swap pointers under the mutex so the UI never sees
- * a half-written PNG. */
+ * a half-written SVG. */
 EXT_RAM_BSS_ATTR static uint8_t s_buf_a[MUFMAP_BUF_BYTES];
 EXT_RAM_BSS_ATTR static uint8_t s_buf_b[MUFMAP_BUF_BYTES];
 
@@ -85,11 +88,25 @@ static bool fetch_once(void)
 
     if (err != ESP_OK || status != 200 || ctx.total < 128) return false;
 
-    /* Cheap sanity check: PNG signature. Avoids handing LVGL a
-     * 200-byte HTML error page. */
-    static const uint8_t PNG_SIG[8] = { 0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a };
-    if (memcmp(target, PNG_SIG, 8) != 0) {
-        ESP_LOGW(TAG, "response is not a PNG (first bytes %02x %02x %02x %02x)",
+    /* Cheap signature sniff. SVG bodies start with one of:
+     *   <?xml ...?>...<svg ...
+     *   <svg ...
+     * possibly preceded by a UTF-8 BOM (EF BB BF). Skip the BOM if
+     * present, then accept either '<svg' or '<?xml' as the first
+     * non-whitespace token. Anything else is HTML / a redirect
+     * landing page and would just blow up in the SVG decoder. */
+    uint8_t *p = target;
+    size_t   left = ctx.total;
+    if (left >= 3 && p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) {
+        p += 3; left -= 3;
+    }
+    while (left > 0 && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
+        p++; left--;
+    }
+    bool looks_svg = (left >= 5 && memcmp(p, "<?xml", 5) == 0) ||
+                     (left >= 4 && memcmp(p, "<svg",  4) == 0);
+    if (!looks_svg) {
+        ESP_LOGW(TAG, "response is not an SVG (first bytes %02x %02x %02x %02x)",
                  target[0], target[1], target[2], target[3]);
         return false;
     }

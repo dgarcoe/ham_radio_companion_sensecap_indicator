@@ -38,9 +38,10 @@ static app_prop_data_t s_snap_buf;
 
 /* MUF map tab state. We keep two image descriptors and alternate
  * between them on every refresh so LVGL's image cache (which keys on
- * the src pointer) gets a guaranteed miss and re-decodes the freshly
- * fetched PNG. cf=RAW tells the decoder to sniff the header magic
- * and pick lodepng. */
+ * the src pointer) gets a guaranteed miss and re-rasterises the
+ * freshly fetched SVG. cf=RAW tells the decoder to sniff the header
+ * (an SVG body starts with '<?xml' or '<svg') and pick the bundled
+ * Thorvg-backed SVG renderer. */
 static lv_obj_t      *s_mufmap_img;
 static lv_obj_t      *s_mufmap_status;
 static lv_image_dsc_t s_mufmap_dsc[2] = {
@@ -368,10 +369,11 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     if (s_snap_buf.valid) refresh(&s_snap_buf);
 
     /* Tab 2: MUF map from prop.kc2g.com. The image widget hands LVGL's
-     * lodepng decoder the PSRAM PNG buffer; we just need to keep the
-     * descriptor pointer valid. The tab body is scrollable both ways
-     * because the source PNG is bigger than the 480 px content area
-     * and we don't want to spend CPU on a runtime scale at this size. */
+     * Thorvg-backed SVG decoder the PSRAM buffer; we just need to keep
+     * the descriptor pointer valid. The tab body is scrollable both
+     * ways because the source render's native viewBox is wider than
+     * the 480 px content area and we don't want to spend CPU on a
+     * runtime scale at this size. */
     lv_obj_t *muf_tab = lv_tabview_add_tab(tv, "MUF Map");
     lv_obj_set_flex_flow(muf_tab, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(muf_tab, LV_FLEX_ALIGN_START,
@@ -382,10 +384,8 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
 
     s_mufmap_img = lv_image_create(muf_tab);
     lv_image_set_src(s_mufmap_img, NULL);
-    /* The kc2g.com 'normal' PNG is ~1100 px wide, so on a 480-px panel
-     * the image overflows the tab body and the scroll above lets the
-     * user pan around it. Inner-align CENTER keeps the equator near
-     * the visible area when the user first opens the tab. */
+    /* Inner-align CENTER keeps the equator near the visible area when
+     * the user first opens the tab. */
     lv_image_set_inner_align(s_mufmap_img, LV_IMAGE_ALIGN_CENTER);
 
     s_mufmap_status = lv_label_create(muf_tab);
