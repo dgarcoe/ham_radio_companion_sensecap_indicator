@@ -4,6 +4,7 @@
 #include "app_propagation.h"
 #include "app_dxcluster.h"
 #include "app_pota.h"
+#include "app_sota.h"
 #include "esp_attr.h"
 
 #include <math.h>
@@ -22,6 +23,7 @@
  *         on whether the sun is currently above the horizon at QTH.
  * Row 5:  Latest DX spot (from app_dxcluster's spot ring).
  * Row 6:  Latest POTA activation.
+ * Row 7:  Latest SOTA activation.
  *
  * All cards are polled off the same 250 ms tick that drives the clock.
  * The clock label updates every tick; the data cards only re-pull
@@ -36,6 +38,7 @@ static lv_obj_t *s_sun_rise_lbl, *s_sun_set_lbl;
 static lv_obj_t *s_band_lbl;
 static lv_obj_t *s_dx_lbl;
 static lv_obj_t *s_pota_lbl;
+static lv_obj_t *s_sota_lbl;
 
 static float s_qth_lat = NAN;
 static float s_qth_lon = NAN;
@@ -43,6 +46,7 @@ static float s_qth_lon = NAN;
 EXT_RAM_BSS_ATTR static app_prop_data_t  s_snap_prop;
 EXT_RAM_BSS_ATTR static app_dx_state_t   s_snap_dx;
 EXT_RAM_BSS_ATTR static app_pota_state_t s_snap_pota;
+EXT_RAM_BSS_ATTR static app_sota_state_t s_snap_sota;
 
 /* ---- Maidenhead locator -> lat/lon (same parser as ui_grayline) ---- */
 static bool parse_locator(const char *loc, float *out_lat, float *out_lon)
@@ -319,12 +323,26 @@ static void refresh_slow(const struct tm *utc)
         lv_obj_set_style_text_color(s_band_lbl, cond_color(best_cond), 0);
     }
 
-    /* Latest DX spot */
+    /* Latest DX spot. The DX cluster gives us a free-form `comment`
+     * rather than a dedicated mode field, but by convention the first
+     * whitespace-delimited token is the mode (e.g. "FT8 from Germany"
+     * -> "FT8"). Pull it out and slot it between the freq and time
+     * so the row reads call - freq - mode - time. */
     app_dxcluster_get(&s_snap_dx);
     if (s_snap_dx.count > 0) {
         const app_dx_spot_t *sp = &s_snap_dx.spots[s_snap_dx.head];
-        snprintf(buf, sizeof(buf), "%s  %s  %s",
-                 sp->dx_call, sp->freq, sp->time);
+        char mode[10];
+        size_t mlen = strcspn(sp->comment, " \t");
+        if (mlen >= sizeof(mode)) mlen = sizeof(mode) - 1;
+        memcpy(mode, sp->comment, mlen);
+        mode[mlen] = '\0';
+        if (mode[0]) {
+            snprintf(buf, sizeof(buf), "%s  %s  %s  %s",
+                     sp->dx_call, sp->freq, mode, sp->time);
+        } else {
+            snprintf(buf, sizeof(buf), "%s  %s  %s",
+                     sp->dx_call, sp->freq, sp->time);
+        }
         lv_label_set_text(s_dx_lbl, buf);
     } else {
         lv_label_set_text(s_dx_lbl, "(waiting)");
@@ -339,6 +357,17 @@ static void refresh_slow(const struct tm *utc)
         lv_label_set_text(s_pota_lbl, buf);
     } else {
         lv_label_set_text(s_pota_lbl, "(waiting)");
+    }
+
+    /* Latest SOTA activation */
+    app_sota_get(&s_snap_sota);
+    if (s_snap_sota.count > 0) {
+        const app_sota_spot_t *sp = &s_snap_sota.spots[0];
+        snprintf(buf, sizeof(buf), "%s  %s  %s %s",
+                 sp->activator, sp->summit_ref, sp->freq, sp->mode);
+        lv_label_set_text(s_sota_lbl, buf);
+    } else {
+        lv_label_set_text(s_sota_lbl, "(waiting)");
     }
 }
 
@@ -381,7 +410,9 @@ static void build_metric(lv_obj_t *parent, const char *name,
 {
     lv_obj_t *card = lv_obj_create(parent);
     ui_theme_style_panel(card);
-    lv_obj_set_size(card, LV_PCT(23), 62);
+    /* 68 px tall: name (18-pt ~22) + gap 2 + value (24-pt ~30) +
+     * 4 px pad each side = 66 px content, fits with 2 px slack. */
+    lv_obj_set_size(card, LV_PCT(23), 68);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -396,7 +427,7 @@ static void build_metric(lv_obj_t *parent, const char *name,
     lv_obj_t *l = lv_label_create(card);
     lv_label_set_text(l, name);
     lv_obj_set_style_text_color(l, UI_COL_MUTED, 0);
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_18, 0);
 
     lv_obj_t *v = lv_label_create(card);
     lv_label_set_text(v, "-");
@@ -407,7 +438,10 @@ static void build_metric(lv_obj_t *parent, const char *name,
 
 /* Same left-stripe treatment for the wide one-line strips below the
  * metric row. The accent argument groups related rows visually
- * (solar = mint, sun = gold, propagation = electric, spots = mint). */
+ * (solar = mint, sun = gold, propagation = electric, spots = mint).
+ * Stays on the default 14-pt font for headers but each value label is
+ * bumped to montserrat_18 inline so the strip's content reads at a
+ * glance even from across the desk. */
 static lv_obj_t *build_strip(lv_obj_t *parent, lv_color_t accent)
 {
     lv_obj_t *s = lv_obj_create(parent);
@@ -416,7 +450,7 @@ static lv_obj_t *build_strip(lv_obj_t *parent, lv_color_t accent)
     lv_obj_set_flex_flow(s, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_hor(s, 10, 0);
+    lv_obj_set_style_pad_hor(s, 12, 0);
     lv_obj_set_style_pad_ver(s, 4, 0);
     lv_obj_set_style_border_color(s, accent, 0);
     lv_obj_set_style_border_width(s, 3, 0);
@@ -435,7 +469,7 @@ static void labeled_value(lv_obj_t *parent, const char *header,
     lv_obj_t *v = lv_label_create(parent);
     lv_label_set_text(v, "-");
     lv_obj_set_style_text_color(v, value_color, 0);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(v, &lv_font_montserrat_18, 0);
     *value_out = v;
 }
 
@@ -454,6 +488,12 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(scr, 6, 0);
+    /* Vertical budget at montserrat_18 strips on a 480x480 panel:
+     *   12 (pad) + 56 (clock@48) + 5 + 28 (date@20) + 5 + 68 (metrics)
+     *   + 5 + 6 strips*34 + 5 inter-gaps*5 = 412 px in a 428 px area.
+     * The 16 px of slack absorbs LVGL's line-height rounding. Adding
+     * another strip would require shrinking the clock or merging
+     * two of the existing rows. */
     lv_obj_set_style_pad_gap(scr, 5, 0);
 
     s_time_lbl = lv_label_create(scr);
@@ -463,7 +503,7 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
 
     s_date_lbl = lv_label_create(scr);
     lv_label_set_text(s_date_lbl, "-- --- ----  \xE2\x80\xA2  DOY ---");
-    lv_obj_set_style_text_font(s_date_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(s_date_lbl, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(s_date_lbl, UI_COL_TEXT, 0);
 
     /* Accent palette for the left stripes -- solar / geomagnetic
@@ -499,15 +539,18 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     s_sun_rise_lbl = lv_label_create(sun);
     lv_label_set_text(s_sun_rise_lbl, LV_SYMBOL_UP "  --");
     lv_obj_set_style_text_color(s_sun_rise_lbl, accent_sun, 0);
+    lv_obj_set_style_text_font(s_sun_rise_lbl, &lv_font_montserrat_18, 0);
     s_sun_set_lbl = lv_label_create(sun);
     lv_label_set_text(s_sun_set_lbl, LV_SYMBOL_DOWN "  --");
     lv_obj_set_style_text_color(s_sun_set_lbl, accent_sun, 0);
+    lv_obj_set_style_text_font(s_sun_set_lbl, &lv_font_montserrat_18, 0);
 
     /* Best HF bands now */
     lv_obj_t *bands = build_strip(scr, accent_prop);
     s_band_lbl = lv_label_create(bands);
     lv_label_set_text(s_band_lbl, "HF: --");
     lv_obj_set_style_text_color(s_band_lbl, UI_COL_TEXT, 0);
+    lv_obj_set_style_text_font(s_band_lbl, &lv_font_montserrat_18, 0);
 
     /* Latest DX */
     lv_obj_t *dx = build_strip(scr, accent_dx);
@@ -518,6 +561,7 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     s_dx_lbl = lv_label_create(dx);
     lv_label_set_text(s_dx_lbl, "(waiting)");
     lv_obj_set_style_text_color(s_dx_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(s_dx_lbl, &lv_font_montserrat_18, 0);
 
     /* Latest POTA */
     lv_obj_t *pota = build_strip(scr, accent_pota);
@@ -528,6 +572,18 @@ lv_obj_t *ui_watch_create(lv_obj_t *parent, const app_config_t *cfg)
     s_pota_lbl = lv_label_create(pota);
     lv_label_set_text(s_pota_lbl, "(waiting)");
     lv_obj_set_style_text_color(s_pota_lbl, UI_COL_ACCENT_2, 0);
+    lv_obj_set_style_text_font(s_pota_lbl, &lv_font_montserrat_18, 0);
+
+    /* Latest SOTA */
+    lv_obj_t *sota = build_strip(scr, accent_dx);
+    lv_obj_t *sota_hdr = lv_label_create(sota);
+    lv_label_set_text(sota_hdr, "SOTA");
+    lv_obj_set_style_text_color(sota_hdr, UI_COL_MUTED, 0);
+    lv_obj_set_style_text_font(sota_hdr, &lv_font_montserrat_14, 0);
+    s_sota_lbl = lv_label_create(sota);
+    lv_label_set_text(s_sota_lbl, "(waiting)");
+    lv_obj_set_style_text_color(s_sota_lbl, UI_COL_ACCENT, 0);
+    lv_obj_set_style_text_font(s_sota_lbl, &lv_font_montserrat_18, 0);
 
     return scr;
 }
