@@ -45,6 +45,12 @@ static lv_timer_t *s_inspect_hide_timer;
 static float s_station_lat = NAN;
 static float s_station_lon = NAN;
 
+/* Last tapped point on the map: NaN until the user clicks. draw_grayline
+ * plots a hollow ring at this location so the inspect popup has a
+ * visual anchor; inspect_hide_cb resets it and forces a repaint. */
+static float s_click_lat = NAN;
+static float s_click_lon = NAN;
+
 /* MUF contour thresholds (squared so we can compare against muf^2 and
  * skip the per-pixel sqrtf). Values: 14 MHz (20m), 21 MHz (15m),
  * 28 MHz (10m). Colours picked to read against both day and night
@@ -444,6 +450,23 @@ static void plot_marker(int cx, int cy, uint16_t color)
     plot_marker_r(cx, cy, color, 3);
 }
 
+/* 1-px-thick hollow circle. Used for the tap marker so it never
+ * obscures the underlying terrain or another marker. */
+static void plot_ring(int cx, int cy, uint16_t color, int r)
+{
+    int r2_out =  r      * r;
+    int r2_in  = (r - 1) * (r - 1);
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int d2 = dx * dx + dy * dy;
+            if (d2 > r2_out || d2 < r2_in) continue;
+            int px = cx + dx, py = cy + dy;
+            if (px < 0 || px >= GL_W || py < 0 || py >= GL_H) continue;
+            s_canvas_buf[py * GL_W + px] = color;
+        }
+    }
+}
+
 /* ---------- moon subpoint (low-precision lunar ephemeris) ---------- */
 
 /* Approximate location of the moon's subpoint at `now`. Based on the
@@ -543,11 +566,23 @@ static void great_circle(float lat1, float lon1, float lat2, float lon2,
 
 /* ---------- touch-to-inspect --------------------------------------- */
 
+/* Forward decl so the click + hide callbacks can trigger a full
+ * repaint -- they update the s_click_* state that draw_grayline reads
+ * to position the orange tap ring. */
+static void draw_grayline(time_t now);
+
 static void inspect_hide_cb(lv_timer_t *t)
 {
     (void)t;
     if (s_lbl_inspect) lv_obj_add_flag(s_lbl_inspect, LV_OBJ_FLAG_HIDDEN);
     s_inspect_hide_timer = NULL;
+    /* Drop the tap marker too, otherwise an orange ring lingers on
+     * the map for up to 30 s with no popup to explain it. The repaint
+     * is cheap (~10 ms) and the user already tapped, so a fresh frame
+     * is the obvious next state. */
+    s_click_lat = NAN;
+    s_click_lon = NAN;
+    draw_grayline(time(NULL));
 }
 
 static void on_canvas_clicked(lv_event_t *e)
@@ -612,7 +647,14 @@ static void on_canvas_clicked(lv_event_t *e)
     lv_label_set_text(s_lbl_inspect, buf);
     lv_obj_remove_flag(s_lbl_inspect, LV_OBJ_FLAG_HIDDEN);
 
-    /* Re-arm a 6 s one-shot to dismiss. */
+    /* Mark the tapped point on the map with an orange ring. Repaints
+     * the whole canvas (~10 ms on the S3) so any previous tap marker
+     * is replaced cleanly. */
+    s_click_lat = lat;
+    s_click_lon = lon;
+    draw_grayline(now);
+
+    /* Re-arm a 6 s one-shot to dismiss the popup + the ring. */
     if (s_inspect_hide_timer) {
         lv_timer_reset(s_inspect_hide_timer);
     } else {
@@ -722,6 +764,15 @@ static void draw_grayline(time_t now)
         plot_marker(hx, hy, rgb565(0x10, 0xF0, 0xD8));
     }
 
+    /* Tap marker (bright orange ring). Hollow + 5 px radius so it
+     * reads against both day and night fills and points at the same
+     * pixel the on_canvas_clicked handler measured. */
+    if (!isnan(s_click_lat) && !isnan(s_click_lon)) {
+        int cx = (int)((s_click_lon + 180.0f) * (GL_W / 360.0f));
+        int cy = (int)((90.0f - s_click_lat) * (GL_H / 180.0f));
+        plot_ring(cx, cy, rgb565(0xFF, 0x90, 0x10), 5);
+    }
+
     /* Labels under the map */
     struct tm tm_utc;
     gmtime_r(&now, &tm_utc);
@@ -733,7 +784,7 @@ static void draw_grayline(time_t now)
     if (muf_on) {
         snprintf(buf, sizeof(buf),
                  "Sun %+5.1f\xC2\xB0 %+6.1f\xC2\xB0  \xE2\x80\xA2  "
-                 "MUF lines: 14 / 21 / 28 MHz  SFI %d",
+                 "MUF 14/21/28 MHz  SFI %d",
                  (double)decl_deg, (double)sublon_deg, prop.solar_flux);
     } else {
         snprintf(buf, sizeof(buf), "Sun  %+5.1f\xC2\xB0  %+6.1f\xC2\xB0",
@@ -800,19 +851,32 @@ lv_obj_t *ui_grayline_create(lv_obj_t *parent, const app_config_t *cfg)
     lv_obj_add_flag(s_canvas, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_canvas, on_canvas_clicked, LV_EVENT_CLICKED, NULL);
 
+    /* Wrap mode + explicit width so the Sun line doesn't overflow when
+     * the MUF / SFI suffix is appended -- the full string ('Sun ... *
+     * MUF lines: 14 / 21 / 28 MHz  SFI nnn') is well past the canvas
+     * width at montserrat_18 and was being clipped at both ends. */
     s_lbl_sun = lv_label_create(scr);
+    lv_obj_set_width(s_lbl_sun, LV_PCT(98));
     lv_obj_set_style_text_color(s_lbl_sun, UI_COL_TEXT, 0);
     lv_obj_set_style_text_font(s_lbl_sun, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_align(s_lbl_sun, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lbl_sun, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_lbl_sun, "Sun  --");
 
     s_lbl_moon = lv_label_create(scr);
+    lv_obj_set_width(s_lbl_moon, LV_PCT(98));
     lv_obj_set_style_text_color(s_lbl_moon, UI_COL_TEXT, 0);
     lv_obj_set_style_text_font(s_lbl_moon, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_align(s_lbl_moon, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lbl_moon, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_lbl_moon, "Moon --");
 
     s_lbl_station = lv_label_create(scr);
+    lv_obj_set_width(s_lbl_station, LV_PCT(98));
     lv_obj_set_style_text_color(s_lbl_station, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_lbl_station, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_align(s_lbl_station, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lbl_station, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_lbl_station, "QTH  --");
 
     /* Touch popup. Hidden until the user taps the map; auto-dismisses
