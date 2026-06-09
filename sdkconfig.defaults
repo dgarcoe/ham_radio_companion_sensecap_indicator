@@ -72,20 +72,14 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 
-# LVGL's bundled Thorvg-backed SVG renderer + vector-graphic widget so
-# the propagation MUF map tab can hand the raw prop.kc2g.com SVG bytes
-# (~1100x550 viewBox) straight at lv_image and get a rasterised pixel
-# buffer back. (The site doesn't serve a PNG version of the live
-# render -- that URL is a 404, the canonical .svg is the only option.)
-# Thorvg + Vector_Graphic together pull in a few hundred KB of code
-# but allocate working memory through lv_malloc, which
-# CONFIG_LV_USE_CUSTOM_MALLOC routes to PSRAM. A 2-slot image cache
-# keeps the rasterised buffer warm between paints -- without it the
-# tab would re-rasterise on every redraw and feel sluggish.
-CONFIG_LV_USE_VECTOR_GRAPHIC=y
-CONFIG_LV_USE_THORVG_INTERNAL=y
-CONFIG_LV_USE_SVG=y
-CONFIG_LV_CACHE_DEF_SIZE=2
+# LVGL's QR-code widget for the propagation MUF map tab. The on-device
+# SVG render of the prop.kc2g.com map didn't work out (LVGL 9.1's
+# Thorvg integration is patchy across minor versions and chasing the
+# right Kconfig + decoder registration cost more device-iteration time
+# than it was worth), so the tab now shows a QR code the user can
+# scan to open the live SVG in a phone browser. Reliable, scales to
+# any future site change.
+CONFIG_LV_USE_QRCODE=y
 
 # Skip LVGL's software anti-aliased mask path. We have no rounded
 # corners / shadows by design - the complex-draw renderer would still
