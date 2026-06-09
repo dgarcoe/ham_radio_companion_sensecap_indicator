@@ -14,14 +14,23 @@
 
 static const char *TAG = "app_mufmap";
 
-/* prop.kc2g.com renders the global F2 MUF map continuously. The
- * 'normal' projection at the 'now' timestamp is the canonical view --
- * served as SVG; there is no PNG version of the live render (the
- * earlier .png URL was a 404). LVGL's bundled Thorvg-backed SVG
- * decoder reads it straight from the buffer once we hand cf=RAW at
- * the image dsc. */
-#define MUFMAP_URL          "https://prop.kc2g.com/renders/current/mufd-normal-now.svg"
-#define MUFMAP_BUF_BYTES    (512 * 1024)
+/* prop.kc2g.com serves the live MUF render only as SVG, and LVGL's
+ * on-device SVG decoders are too inconsistent across minor versions
+ * to rely on. Solution: route through images.weserv.nl, a free
+ * libvips-backed proxy that fetches a remote URL, rasterises it
+ * server-side, and hands us back a PNG at whatever pixel width we
+ * ask for. The kc2g SVG has a 2:1 aspect, so 460 px wide => 230 px
+ * tall, which lines up exactly with the propagation tab's content
+ * area. The fetched PNG is small (~40-80 KB typical) and lodepng
+ * handles it without complaint.
+ *
+ * If weserv.nl is ever unreachable the tab gracefully degrades to
+ * 'Waiting...' -- no crash, just no picture until the next retry. */
+#define MUFMAP_URL \
+    "https://images.weserv.nl/" \
+    "?url=prop.kc2g.com/renders/current/mufd-normal-now.svg" \
+    "&w=460&output=png"
+#define MUFMAP_BUF_BYTES    (256 * 1024)
 
 #define FETCH_INTERVAL_MS   (15 * 60 * 1000)
 #define RETRY_INTERVAL_MS   (30 * 1000)
@@ -32,7 +41,7 @@ static app_mufmap_cb_t   s_cb;
 
 /* Two buffers: one being filled by an in-flight fetch, one being
  * displayed. We swap pointers under the mutex so the UI never sees
- * a half-written SVG. */
+ * a half-written PNG. */
 EXT_RAM_BSS_ATTR static uint8_t s_buf_a[MUFMAP_BUF_BYTES];
 EXT_RAM_BSS_ATTR static uint8_t s_buf_b[MUFMAP_BUF_BYTES];
 
@@ -88,25 +97,13 @@ static bool fetch_once(void)
 
     if (err != ESP_OK || status != 200 || ctx.total < 128) return false;
 
-    /* Cheap signature sniff. SVG bodies start with one of:
-     *   <?xml ...?>...<svg ...
-     *   <svg ...
-     * possibly preceded by a UTF-8 BOM (EF BB BF). Skip the BOM if
-     * present, then accept either '<svg' or '<?xml' as the first
-     * non-whitespace token. Anything else is HTML / a redirect
-     * landing page and would just blow up in the SVG decoder. */
-    uint8_t *p = target;
-    size_t   left = ctx.total;
-    if (left >= 3 && p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) {
-        p += 3; left -= 3;
-    }
-    while (left > 0 && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
-        p++; left--;
-    }
-    bool looks_svg = (left >= 5 && memcmp(p, "<?xml", 5) == 0) ||
-                     (left >= 4 && memcmp(p, "<svg",  4) == 0);
-    if (!looks_svg) {
-        ESP_LOGW(TAG, "response is not an SVG (first bytes %02x %02x %02x %02x)",
+    /* Cheap signature sniff: weserv.nl should hand us a PNG when we
+     * ask for output=png. If it doesn't (proxy failure, a 200 with an
+     * HTML error page) we'd just hand garbage to LVGL. The 8-byte PNG
+     * signature is fixed: 89 50 4E 47 0D 0A 1A 0A. */
+    static const uint8_t PNG_SIG[8] = { 0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a };
+    if (memcmp(target, PNG_SIG, 8) != 0) {
+        ESP_LOGW(TAG, "response is not a PNG (first bytes %02x %02x %02x %02x)",
                  target[0], target[1], target[2], target[3]);
         return false;
     }

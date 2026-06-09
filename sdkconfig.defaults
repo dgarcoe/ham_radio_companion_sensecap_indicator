@@ -72,14 +72,17 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 
-# LVGL's QR-code widget for the propagation MUF map tab. The on-device
-# SVG render of the prop.kc2g.com map didn't work out (LVGL 9.1's
-# Thorvg integration is patchy across minor versions and chasing the
-# right Kconfig + decoder registration cost more device-iteration time
-# than it was worth), so the tab now shows a QR code the user can
-# scan to open the live SVG in a phone browser. Reliable, scales to
-# any future site change.
-CONFIG_LV_USE_QRCODE=y
+# LVGL's bundled lodepng decoder for the propagation MUF map tab.
+# kc2g.com only serves the live MUF render as SVG, and LVGL's
+# Thorvg-backed SVG path doesn't actually display on the device.
+# Workaround: app_mufmap fetches the SVG through images.weserv.nl
+# (a free libvips proxy) with output=png&w=460, so what arrives in
+# PSRAM is a 460-px-wide PNG that lodepng decodes without complaint.
+# The decoder allocates through lv_malloc which CONFIG_LV_USE_CUSTOM_MALLOC
+# routes to PSRAM. A 2-slot image cache keeps the decoded buffer warm
+# between paints so the tab doesn't re-decode on every redraw.
+CONFIG_LV_USE_LODEPNG=y
+CONFIG_LV_CACHE_DEF_SIZE=2
 
 # Skip LVGL's software anti-aliased mask path. We have no rounded
 # corners / shadows by design - the complex-draw renderer would still

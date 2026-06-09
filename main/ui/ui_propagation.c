@@ -36,17 +36,20 @@ static prop_row_t s_vhf[VHF_MAX_ROWS];
 
 static app_prop_data_t s_snap_buf;
 
-/* MUF map tab state. LVGL 9.1's bundled SVG decoder (Thorvg) didn't
- * actually render the kc2g.com SVG even after the bytes were in PSRAM,
- * and chasing the exact Kconfig + decoder registration recipe across
- * LVGL minor versions is not a good use of device-iteration time.
- * Instead we hand the live URL to the user as a QR code: phone-scan
- * it and the SVG opens in your browser. We still drive app_mufmap so
- * the tab shows 'server reachable, N KB available' as proof of life. */
-static lv_obj_t *s_mufmap_qr;
-static lv_obj_t *s_mufmap_status;
-
-#define MUFMAP_PUBLIC_URL  "https://prop.kc2g.com/"
+/* MUF map tab state. The image bytes that app_mufmap pulls are now a
+ * PNG rasterised server-side by images.weserv.nl from the kc2g.com
+ * SVG -- LVGL's well-tested lodepng decoder handles those. Two image
+ * descriptors and we alternate between them on every refresh so
+ * LVGL's image cache (which keys on the src pointer) gets a
+ * guaranteed miss and re-decodes the new bytes. cf=RAW asks the
+ * decoder to sniff the PNG signature in the data. */
+static lv_obj_t      *s_mufmap_img;
+static lv_obj_t      *s_mufmap_status;
+static lv_image_dsc_t s_mufmap_dsc[2] = {
+    { .header = { .cf = LV_COLOR_FORMAT_RAW }, .data_size = 0, .data = NULL },
+    { .header = { .cf = LV_COLOR_FORMAT_RAW }, .data_size = 0, .data = NULL },
+};
+static int s_mufmap_slot;
 
 static lv_color_t condition_color(const char *cond)
 {
@@ -210,28 +213,32 @@ static void build_row(lv_obj_t *parent, prop_row_t *r, bool wide)
 
 static void mufmap_refresh(const app_mufmap_snap_t *snap)
 {
-    if (!s_mufmap_status) return;
-    char buf[80];
-    if (snap->ever_fetched && snap->size > 0) {
+    if (!s_mufmap_img) return;
+    if (snap->ever_fetched && snap->data && snap->size > 0) {
+        int slot = s_mufmap_slot ^ 1;
+        s_mufmap_dsc[slot].data      = snap->data;
+        s_mufmap_dsc[slot].data_size = snap->size;
+        lv_image_set_src(s_mufmap_img, &s_mufmap_dsc[slot]);
+        s_mufmap_slot = slot;
+
         time_t now = time(NULL);
         struct tm tm_utc;
         gmtime_r(&now, &tm_utc);
+        char buf[80];
         snprintf(buf, sizeof(buf),
-                 "Live  \xE2\x80\xA2  %u KB cached  \xE2\x80\xA2  %02d:%02d UTC",
+                 "kc2g.com  \xE2\x80\xA2  %u KB  \xE2\x80\xA2  %02d:%02d UTC",
                  (unsigned)(snap->size / 1024),
                  tm_utc.tm_hour, tm_utc.tm_min);
-        lv_obj_set_style_text_color(s_mufmap_status,
-                                    lv_color_hex(0x00d97e), 0);
+        lv_label_set_text(s_mufmap_status, buf);
     } else {
-        snprintf(buf, sizeof(buf), "Waiting for prop.kc2g.com...");
-        lv_obj_set_style_text_color(s_mufmap_status, UI_COL_MUTED, 0);
+        lv_label_set_text(s_mufmap_status,
+                          "Fetching MUF map from prop.kc2g.com...");
     }
-    lv_label_set_text(s_mufmap_status, buf);
 }
 
 void ui_mufmap_on_update(const app_mufmap_snap_t *snap)
 {
-    if (!s_mufmap_status) return;
+    if (!s_mufmap_img) return;
     if (!bsp_lvgl_lock(200)) return;
     mufmap_refresh(snap);
     bsp_lvgl_unlock();
@@ -362,51 +369,30 @@ lv_obj_t *ui_propagation_create(lv_obj_t *parent, const app_config_t *cfg)
     app_propagation_get(&s_snap_buf);
     if (s_snap_buf.valid) refresh(&s_snap_buf);
 
-    /* Tab 2: live MUF map at prop.kc2g.com. We can't usefully render
-     * the source SVG on-device (see the comment over s_mufmap_qr) so
-     * the tab presents a QR code the user can scan to open the live
-     * render in a phone browser, plus a status line driven by the
-     * fetcher so it's obvious whether the server is reachable. */
+    /* Tab 2: live MUF map. The bytes are a 460-px PNG, server-side
+     * rasterised from the kc2g.com SVG by images.weserv.nl. lodepng
+     * (enabled via CONFIG_LV_USE_LODEPNG) decodes it on the LVGL
+     * side. Image is sized to fit horizontally; status line beneath
+     * shows reachability + last-fetch time. */
     lv_obj_t *muf_tab = lv_tabview_add_tab(tv, "MUF Map");
     lv_obj_set_flex_flow(muf_tab, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(muf_tab, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(muf_tab, 12, 0);
-    lv_obj_set_style_pad_gap(muf_tab, 10, 0);
+    lv_obj_set_style_pad_all(muf_tab, 6, 0);
+    lv_obj_set_style_pad_gap(muf_tab, 8, 0);
 
-    lv_obj_t *muf_title = lv_label_create(muf_tab);
-    lv_label_set_text(muf_title, "Live HF MUF map");
-    lv_obj_set_style_text_color(muf_title, UI_COL_ACCENT, 0);
-    lv_obj_set_style_text_font(muf_title, &lv_font_montserrat_24, 0);
-
-    lv_obj_t *muf_hint = lv_label_create(muf_tab);
-    lv_label_set_text(muf_hint, "Scan to open on your phone");
-    lv_obj_set_style_text_color(muf_hint, UI_COL_MUTED, 0);
-    lv_obj_set_style_text_font(muf_hint, &lv_font_montserrat_14, 0);
-
-    /* lv_qrcode is enabled via CONFIG_LV_USE_QRCODE in sdkconfig.
-     * Black-on-white render is the most reliable for phone scanners
-     * even on the device's dark theme. 240 px gives plenty of
-     * resolution for a 20-character URL at version-1 ECC. */
-    s_mufmap_qr = lv_qrcode_create(muf_tab);
-    lv_qrcode_set_size(s_mufmap_qr, 240);
-    lv_qrcode_set_dark_color(s_mufmap_qr, lv_color_black());
-    lv_qrcode_set_light_color(s_mufmap_qr, lv_color_white());
-    lv_qrcode_update(s_mufmap_qr,
-                     MUFMAP_PUBLIC_URL, strlen(MUFMAP_PUBLIC_URL));
-
-    lv_obj_t *muf_url = lv_label_create(muf_tab);
-    lv_label_set_text(muf_url, MUFMAP_PUBLIC_URL);
-    lv_obj_set_style_text_color(muf_url, UI_COL_TEXT, 0);
-    lv_obj_set_style_text_font(muf_url, &lv_font_montserrat_14, 0);
+    s_mufmap_img = lv_image_create(muf_tab);
+    lv_image_set_src(s_mufmap_img, NULL);
+    lv_image_set_inner_align(s_mufmap_img, LV_IMAGE_ALIGN_CENTER);
 
     s_mufmap_status = lv_label_create(muf_tab);
-    lv_label_set_text(s_mufmap_status, "Waiting for prop.kc2g.com...");
+    lv_label_set_text(s_mufmap_status,
+                      "Fetching MUF map from prop.kc2g.com...");
     lv_obj_set_style_text_color(s_mufmap_status, UI_COL_MUTED, 0);
     lv_obj_set_style_text_font(s_mufmap_status, &lv_font_montserrat_14, 0);
 
-    /* Seed status from whatever the fetcher already has so the user
-     * doesn't see the 'waiting' placeholder if a fetch already won. */
+    /* Seed from whatever is cached so the user doesn't see the
+     * 'fetching...' placeholder if the fetcher already won. */
     app_mufmap_snap_t mufmap_snap;
     app_mufmap_get(&mufmap_snap);
     mufmap_refresh(&mufmap_snap);
